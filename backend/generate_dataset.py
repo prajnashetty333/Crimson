@@ -26,8 +26,10 @@ if MYSQL_USER and MYSQL_PASSWORD and MYSQL_HOST and MYSQL_DB:
     DATABASE_URL = f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}/{MYSQL_DB}"
     print(f"Connecting to MySQL Database at {MYSQL_HOST}...")
 else:
-    DATABASE_URL = "sqlite:///ovacare.db"
-    print("No MySQL credentials found. Falling back to local SQLite database (ovacare.db)...")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "ovacare.db")
+    DATABASE_URL = f"sqlite:///{db_path}"
+    print(f"No MySQL credentials found. Falling back to local SQLite database ({db_path})...")
 
 engine = create_engine(DATABASE_URL)
 metadata = MetaData()
@@ -123,14 +125,20 @@ start_date_range = datetime.now() - timedelta(days=DAYS_OF_HISTORY)
 
 for i in range(NUM_USERS):
     user_id = f"usr_{uuid.uuid4().hex[:12]}"
-    username = fake.name()
-    email = fake.unique.email()
     password = "pbkdf2:sha256:260000$mockpbkdf2key"  # static hashed password mock
-    age = random.randint(18, 45)
-    lifestyle = random.choice(lifestyles)
-    
-    # 20% PCOS probability, which strongly correlates with irregular cycles
-    has_pcos = random.random() < 0.20
+    if i == 0:
+        username = "Demo User"
+        email = "demo@ovacare.app"
+        age = 26
+        lifestyle = "Moderate"
+        has_pcos = False
+    else:
+        username = fake.name()
+        email = fake.unique.email()
+        age = random.randint(18, 45)
+        lifestyle = random.choice(lifestyles)
+        # 20% PCOS probability, which strongly correlates with irregular cycles
+        has_pcos = random.random() < 0.20
     
     user_list.append({
         "user_id": user_id,

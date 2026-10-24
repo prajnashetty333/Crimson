@@ -195,6 +195,12 @@ class TestAuthenticationMiddleware(unittest.TestCase):
     def setUp(self):
         app.config['TESTING'] = True
         self.client = app.test_client()
+        from db import execute_write
+        execute_write(
+            "INSERT OR IGNORE INTO users (user_id, username, email, password, age, lifestyle, has_pcos) "
+            "VALUES (:uid, :name, :email, :pwd, 25, 'Active', 0)",
+            {"uid": "usr_demo_patient", "name": "Test Patient", "email": "test_patient@example.com", "pwd": "hash"}
+        )
 
     def test_protected_endpoint_missing_auth_header_returns_401(self):
         """Requests without Authorization header must be rejected with 401."""

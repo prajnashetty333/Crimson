@@ -920,6 +920,12 @@ def get_admin_stats(current_user):
         "activity_cohorts": activity_cohorts
     }), 200
 
+# ==========================================
+# Community Module Blueprint Registration
+# ==========================================
+from community import community_bp
+app.register_blueprint(community_bp, url_prefix='/api/community')
+
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
     default_debug = "True" if is_development_mode() else "False"

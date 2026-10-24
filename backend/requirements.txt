@@ -3,7 +3,8 @@ Flask-Cors==4.0.1
 SQLAlchemy==2.0.30
 PyMySQL==1.1.1
 cryptography==42.0.7
-pandas==2.2.2
+pandas>=2.2.3
 faker==25.2.0
-numpy==1.26.4
+numpy>=2.0.0
+
 python-dotenv==1.0.1
