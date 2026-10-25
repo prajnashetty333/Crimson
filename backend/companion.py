@@ -29,30 +29,39 @@ def _is_rate_limited(client_ip: str) -> bool:
     _request_records[client_ip].append(now)
     return False
 
-SYSTEM_PROMPT = """You are OvaCare Companion, a warm, caring, and knowledgeable wellness friend for PCOS, menstrual health, hormonal balance, and holistic wellbeing. Talk with the user just like a close, supportive, and knowledgeable friend having tea together.
+SYSTEM_PROMPT = """You are a friendly, natural, supportive conversational companion. Follow the user's topic instead of steering the conversation toward health. PCOS, periods, hormones, fertility, and wellness are not default conversation topics. Discuss them only when relevant to what the user asks or to the ongoing context. For ordinary conversation, behave like a relaxed, thoughtful friend. For health questions, remain warm and conversational while prioritising accurate, evidence-based information, verified sources, and appropriate safety guidance. Never invent medical facts or citations.
 
-Persona & Communication Guidelines:
-1. Tone: Warm, calm, patient, empathetic, and grounded. Never sound robotic, clinical, or formal.
-2. Language: Use natural conversational language, contractions (it's, you're, don't, there's), and gentle transitions.
-3. Anti-Repetition: NEVER say "As an AI..." or "As an AI language model". Avoid repetitive filler like starting every answer with "I understand" or "I'm sorry you're feeling this way".
-4. Length & Focus: For ordinary conversation, aim for 2 to 4 short sentences (around 30 to 60 words). Give one useful suggestion at a time and ask at most one gentle follow-up question when helpful.
-5. Factual Medical Truth:
-   - Prioritize correctness over sounding agreeable. Never agree with a false medical claim just to be polite.
-   - Distinguish established medical evidence from emerging research and social-media trends.
-   - Never invent studies, statistics, citations, diagnoses, medication instructions, or treatment claims.
-   - If user asks about unproven cures or trends (e.g. "cinnamon cures PCOS", "seed cycling balances hormones"), correct the misconception gently and clearly.
-   - Avoid promising that any food, supplement, or lifestyle change will "cure" PCOS.
-   - Never claim that every person with PCOS has insulin resistance, infertility, irregular periods, or identical symptoms.
-6. Clinical Safety Boundaries:
-   - Provide supportive general education, but you are NOT a doctor or therapist. Never give prescription dosages or tell users to alter prescribed medication.
-   - For emergency red flags (severe sudden pelvic pain, fainting, bleeding soaking >1 pad/hr, crisis/self-harm), immediately prioritize safety and urge seeking emergency care (A&E/ER/911/988). Never let length limits suppress urgent safety.
+Conversational Style Guidelines:
+1. Real Friend Dynamic:
+   - Talk like a real, supportive friend having a casual chat. Use warm, relaxed, everyday language, contractions (it's, you're, don't, I'd, that's), and occasional light, tasteful humour.
+   - Let the user lead the conversation. If they want to talk about movies, music, college, work, food, boredom, or daily life, engage enthusiastically in that topic. NEVER hijack the conversation to bring up PCOS, hormones, periods, tracking, or health.
+   - For ordinary conversation, keep responses natural and concise: 1 to 3 sentences (around 15 to 45 words). Be concise without sounding blunt or robotic.
+   - Acknowledge feelings warmly without sounding like a clinical therapist or overdoing sympathy.
+   - Avoid repetitive stock phrases like "I understand", "I'm sorry you're feeling this way", "That's completely valid", or starting answers with formal acknowledgments.
+   - Never say "As an AI..." or "As an AI language model".
+   - Do not claim to have human physical experiences, a personal life, or bodily feelings.
+   - Ask at most one natural follow-up question at a time, only when it fits the flow. Do not interrogate.
+   - Do not repeatedly greet the user or introduce yourself in ongoing conversation.
+
+2. Health & Medical Responses (ONLY when the user asks or context is medical):
+   - Switch smoothly to evidence-based health information while keeping the same warmth and conversational tone.
+   - Prioritise clinical accuracy over agreeableness. Never confirm false medical claims or unproven social-media trends to be polite.
+   - If the user asks about unproven cures or myths (e.g. "cinnamon cures PCOS", "seed cycling fixes hormones"), correct the misconception gently, factually, and without judgment.
+   - Explain biological connections in simple, clear language.
+   - Do not diagnose, prescribe medications, or give prescription dosages.
+   - Never claim that any diet, herb, or supplement will "cure" PCOS.
+   - Never assume every person with PCOS has identical symptoms or experiences.
+   - State uncertainty honestly and recommend discussing individual situations with a doctor when warranted.
+
+3. Emergency Safety Protocol:
+   - If the user describes emergency red flags (severe sudden pelvic/abdominal pain, fainting, bleeding soaking >2 pads/hr, crisis, self-harm, or suicidal ideation), immediately prioritize safety and urge seeking emergency care (A&E/ER/911/988). Emergency safety overrides all length limits.
 
 Output Format:
 You MUST respond with a single valid JSON object strictly matching this schema:
 {
-  "answer": "conversational reply (30-65 words, spoken aloud by voice TTS, warm, friendly, accurate)",
+  "answer": "conversational reply (for general chat: 1-3 natural sentences, 15-45 words; for health: warm, accurate, evidence-grounded)",
   "confidence": "high" | "moderate" | "limited",
-  "medical_topic": "short topic label (e.g. pcos_nutrition, fertility, periods, general_chat)",
+  "medical_topic": "topic label (e.g. 'general_chat', 'entertainment', 'college_life', 'pcos_nutrition', 'periods')",
   "needs_professional_care": true | false,
   "urgency": "routine" | "prompt" | "emergency",
   "emotion": "warm" | "empathy" | "reassurance" | "neutral" | "urgent"
@@ -105,14 +114,15 @@ def parse_and_validate_response(
             except Exception:
                 pass
 
+    category = user_intent.get("category", "general_chat")
+
     if not parsed_json or not isinstance(parsed_json, dict):
         # Fallback if model returned plain conversational text
-        # Clean any partial JSON syntax
         fallback_answer = re.sub(r'[{}\[\]"]', '', clean_text).strip()
         parsed_json = {
             "answer": fallback_answer or clean_text,
-            "confidence": "moderate" if user_intent["category"] == "medical" else "high",
-            "medical_topic": "general_chat" if user_intent["category"] == "general_chat" else "pcos_wellness",
+            "confidence": "moderate" if category == "medical" else "high",
+            "medical_topic": "general_chat" if category == "general_chat" else "pcos_wellness",
             "needs_professional_care": user_intent.get("needs_professional_care", False),
             "urgency": user_intent.get("urgency", "routine"),
             "emotion": "warm"
@@ -124,9 +134,13 @@ def parse_and_validate_response(
 
     confidence = str(parsed_json.get("confidence", "moderate")).lower()
     if confidence not in ("high", "moderate", "limited"):
-        confidence = "moderate"
+        confidence = "high" if category == "general_chat" else "moderate"
 
-    medical_topic = str(parsed_json.get("medical_topic", "pcos_wellness")).strip()
+    default_topic = "general_chat" if category == "general_chat" else "pcos_wellness"
+    medical_topic = str(parsed_json.get("medical_topic", default_topic)).strip()
+    if category == "general_chat" and ("pcos" in medical_topic.lower() or "wellness" in medical_topic.lower()):
+        medical_topic = "general_chat"
+
     needs_prof = bool(parsed_json.get("needs_professional_care", False))
     urgency = str(parsed_json.get("urgency", "routine")).lower()
     if urgency not in ("routine", "prompt", "emergency"):
@@ -137,12 +151,11 @@ def parse_and_validate_response(
         emotion = "warm"
 
     # Emergency safety override: If server-side safety classifier detected red flags
-    if user_intent.get("category") == "emergency":
+    if category == "emergency":
         urgency = "emergency"
         needs_prof = True
         emotion = "urgent"
         confidence = "high"
-        # Ensure answer clearly directs to emergency care
         lower_ans = answer.lower()
         if not any(k in lower_ans for k in ["emergency", "911", "999", "112", "988", "urgent care", "hospital", "doctor"]):
             answer = f"Please seek immediate emergency medical care right away. {answer}"
@@ -151,9 +164,9 @@ def parse_and_validate_response(
     if user_intent.get("detected_myths"):
         confidence = "limited"
 
-    # Verify sources: attach ONLY authentic verified documents from our RAG knowledge base
-    # Never attach hallucinated URLs
-    if user_intent["category"] in ("medical", "emergency") and retrieved_sources:
+    # Verify sources: attach ONLY authentic verified documents from our RAG knowledge base for health queries
+    # NEVER attach medical sources to general conversation
+    if category in ("medical", "emergency") and retrieved_sources:
         verified_sources = sanitize_and_verify_sources(retrieved_sources)
     else:
         verified_sources = []
@@ -170,11 +183,14 @@ def parse_and_validate_response(
 
 def generate_local_companion_response(user_message: str, user_intent: dict, retrieved_sources: list) -> dict:
     """
-    Generates an evidence-grounded, structured response using the medical_rag
-    knowledge base and clinical safety classifier when external LLM credentials are unset.
+    Generates an evidence-grounded or friendly, conversational structured response
+    when external LLM credentials are unset or during fallback.
+    Behaves like a genuine friend for everyday talk (no unsolicited medical advice)
+    and provides accurate clinical guidance when health topics are asked.
     """
     category = user_intent.get("category", "general_chat")
     myths = user_intent.get("detected_myths", [])
+    msg_lower = user_message.lower().strip()
 
     if category == "emergency":
         urgency = "emergency"
@@ -182,12 +198,23 @@ def generate_local_companion_response(user_message: str, user_intent: dict, retr
         emotion = "urgent"
         confidence = "high"
         answer = (
-            "Please seek immediate emergency medical care right away. Sudden severe pelvic pain, "
-            "fainting, or abnormally heavy bleeding requires urgent evaluation at an emergency "
-            "room (ER/A&E) or by contacting emergency services."
+            "Please seek immediate emergency medical care right away. Sudden severe pelvic or abdominal pain, "
+            "fainting, or abnormally heavy bleeding requires urgent evaluation at an emergency department "
+            "or by calling emergency services (911 / 999 / 112)."
         )
         medical_topic = "emergency_care"
-    elif category == "medical":
+        sources = sanitize_and_verify_sources(retrieved_sources)
+        return {
+            "answer": answer,
+            "confidence": confidence,
+            "medical_topic": medical_topic,
+            "sources": sources,
+            "needs_professional_care": needs_prof,
+            "urgency": urgency,
+            "emotion": emotion
+        }
+
+    if category == "medical":
         urgency = "routine"
         needs_prof = False
         emotion = "warm"
@@ -199,6 +226,20 @@ def generate_local_companion_response(user_message: str, user_intent: dict, retr
                 f"and personalized guidance from your physician rather than unproven quick fixes."
             )
             medical_topic = "pcos_evidence"
+        elif "headache" in msg_lower or "migrain" in msg_lower:
+            answer = (
+                "Headaches can often be triggered by tension, eye strain, dehydration, or poor sleep. "
+                "Resting your eyes in a quiet space and drinking water can help, but check with a doctor "
+                "if it feels severe, sudden, or persistent."
+            )
+            medical_topic = "general_wellness"
+        elif "period" in msg_lower and "pcos" in msg_lower:
+            answer = (
+                "Yes, PCOS commonly leads to irregular or delayed periods because higher androgen levels "
+                "can prevent regular ovulation. Tracking your cycle dates to discuss patterns with your doctor "
+                "is often the most helpful step."
+            )
+            medical_topic = "menstrual_health"
         elif retrieved_sources:
             doc = retrieved_sources[0]
             summary = doc.get("summary", "")
@@ -212,23 +253,68 @@ def generate_local_companion_response(user_message: str, user_intent: dict, retr
             medical_topic = topics[0] if topics else "pcos_wellness"
         else:
             answer = (
-                "For menstrual and hormonal wellness, balanced nutrition, consistent physical activity, "
-                "and restorative sleep form the foundation of health. Discussing specific symptoms with your "
+                "For menstrual and hormonal health, balanced nutrition, regular physical activity, "
+                "and restorative sleep form the foundation. Discussing specific symptoms with your "
                 "doctor ensures personalized guidance."
             )
             medical_topic = "general_wellness"
-    else:  # general_chat
-        urgency = "routine"
-        needs_prof = False
-        emotion = "warm"
-        confidence = "high"
-        answer = (
-            "Hello! I'm your OvaCare Companion, here to support you with calm, evidence-based guidance "
-            "on menstrual health, cycle wellness, and hormonal balance. How are you feeling today?"
-        )
-        medical_topic = "general_chat"
 
-    sources = sanitize_and_verify_sources(retrieved_sources) if category in ("medical", "emergency") else []
+        sources = sanitize_and_verify_sources(retrieved_sources)
+        return {
+            "answer": answer,
+            "confidence": confidence,
+            "medical_topic": medical_topic,
+            "sources": sources,
+            "needs_professional_care": needs_prof,
+            "urgency": urgency,
+            "emotion": emotion
+        }
+
+    # =========================================================================
+    # Ordinary Friend Conversation (general_chat) — Strictly NO unsolicited health/PCOS
+    # =========================================================================
+    urgency = "routine"
+    needs_prof = False
+    emotion = "warm"
+    confidence = "high"
+    medical_topic = "general_chat"
+    sources = []
+
+    # 1. Greetings / How are you
+    if any(re.search(p, msg_lower) for p in [r"^(hi|hello|hey|good morning|good evening|good afternoon|hiya|howdy)[\s!.,?]*$", r"\bhow are you\b", r"\bhow('s| is) (your day|everything|it going)\b"]):
+        answer = "Hey! I'm doing well, thanks for asking 😊 How's your day going?"
+
+    # 2. Boredom / Fun
+    elif any(re.search(p, msg_lower) for p in [r"\b(i('m| am) bored|bored today|nothing to do)\b", r"\bentertain me\b"]):
+        answer = "Haha, one of those days? 😄 Want to chat, play a quick word game, or find something fun to do?"
+
+    # 3. Rough day / College / Work / School exhaustion
+    elif any(re.search(p, msg_lower) for p in [r"\b(rough|hard|long|tiring|bad) day\b", r"\b(college|school|university|work|job).*(exhaust|tired|rough|hard)\b", r"\b(exhaust|tired|rough|hard).*(college|school|university|work|job)\b"]):
+        answer = "Oh no, that sounds tiring. Want to tell me what happened, or would you rather take your mind off it?"
+
+    # 4. Exam / Academic / Work stress (everyday non-clinical stress)
+    elif any(re.search(p, msg_lower) for p in [r"\b(exam|exams|finals|test|studying|homework|deadline).*(stress|anxious|nervous|worried)\b", r"\b(stress|stressed|anxious|nervous|worried).*(exam|exams|finals|test|studying)\b"]):
+        answer = "Exams can be so intense! Take a deep breath—you've put in the work, and one test doesn't define you. How much do you have left to study?"
+
+    # 5. Movie / Book / Entertainment recommendations
+    elif any(re.search(p, msg_lower) for p in [r"\b(suggest|recommend).*(movie|film|series|show|book|song|music|podcast)\b", r"\b(what|which) (movie|show|book) (should i|to) (watch|read)\b"]):
+        answer = "Of course! What kind of mood are you in—something funny, romantic, suspenseful, or comforting?"
+
+    # 6. Jokes / Humour
+    elif any(re.search(p, msg_lower) for p in [r"\b(tell me|know any|say a).*(joke|funny)\b", r"\bmake me laugh\b"]):
+        answer = "Why don't scientists trust atoms? Because they make up everything! 😄 Want another one?"
+
+    # 7. Tea / Evening drinks / Casual food
+    elif any(re.search(p, msg_lower) for p in [r"\b(relaxing|herbal|evening|bedtime|cup of) tea\b", r"\bwhat('s| is) a (nice|good) (tea|drink)\b"]):
+        answer = "Chamomile, peppermint, or warm lemon ginger are lovely and soothing in the evening. What kind of flavours do you usually enjoy?"
+
+    # 8. Productive / Happy / Great day
+    elif any(re.search(p, msg_lower) for p in [r"\b(productive|great|wonderful|awesome|good) day\b", r"\bhad a (great|good|fun|nice) (time|day|weekend)\b"]):
+        answer = "That's wonderful to hear! Having a productive, good day always feels so satisfying. What was the best part of it?"
+
+    # 9. Natural conversational fallback
+    else:
+        answer = "I hear you! Tell me more about what's on your mind—I'm here to chat."
 
     return {
         "answer": answer,
@@ -352,9 +438,9 @@ def companion_chat():
                         if name:
                             parts.append(f"User's name is {name}.")
                         if has_pcos:
-                            parts.append("User has indicated they navigate PCOS.")
+                            parts.append("User's profile mentions PCOS, but DO NOT bring this up unless the user explicitly mentions or asks about it.")
                         if parts:
-                            user_context_note = f"\nContext: {' '.join(parts)}"
+                            user_context_note = f"\nUser Background: {' '.join(parts)}"
             except Exception:
                 pass
 
@@ -386,7 +472,7 @@ def companion_chat():
         payload = {
             "messages": messages,
             "max_tokens": 384,
-            "temperature": 0.4  # Lower temperature for higher factual consistency
+            "temperature": 0.3 if user_intent["category"] in ("medical", "emergency") else 0.7
         }
 
         try:

@@ -189,5 +189,56 @@ class TestCompanionModule(unittest.TestCase):
         data = res.get_json()
         self.assertEqual(len(data["structured"]["sources"]), 0)
 
+    def test_casual_queries_classified_as_general_chat_and_no_pcos_forcing(self):
+        """Everyday life queries are classified as general_chat with no unsolicited PCOS/period mentions in fallback."""
+        from medical_rag import classify_user_intent
+        from companion import generate_local_companion_response
+
+        casual_queries = [
+            "Hi, how are you?",
+            "I'm bored.",
+            "I had a rough day at college.",
+            "Suggest a movie.",
+            "I'm stressed about my exams.",
+            "What's a nice relaxing herbal tea to drink in the evening?"
+        ]
+
+        for query in casual_queries:
+            intent = classify_user_intent(query)
+            self.assertEqual(intent["category"], "general_chat", f"Query '{query}' should be general_chat")
+            self.assertEqual(intent["urgency"], "routine")
+
+            local_resp = generate_local_companion_response(query, intent, [])
+            ans_lower = local_resp["answer"].lower()
+            self.assertEqual(local_resp["medical_topic"], "general_chat")
+            self.assertEqual(len(local_resp["sources"]), 0)
+
+            # Strictly verify NO unsolicited PCOS or period forcing
+            for forbidden in ["pcos", "period", "hormon", "menstru", "fertilit"]:
+                self.assertNotIn(
+                    forbidden, 
+                    ans_lower, 
+                    f"Casual answer to '{query}' must NOT mention '{forbidden}'. Answer: {local_resp['answer']}"
+                )
+
+    def test_health_queries_classified_as_medical(self):
+        """Clinical and medical questions are properly classified and grounded."""
+        from medical_rag import classify_user_intent
+
+        med_intent1 = classify_user_intent("Can PCOS affect periods?")
+        self.assertEqual(med_intent1["category"], "medical")
+
+        med_intent2 = classify_user_intent("Does cinnamon cure PCOS?")
+        self.assertEqual(med_intent2["category"], "medical")
+        self.assertGreater(len(med_intent2.get("detected_myths", [])), 0)
+
+        med_intent3 = classify_user_intent("I have a headache.")
+        self.assertEqual(med_intent3["category"], "medical")
+
+        emg_intent = classify_user_intent("I have sudden severe sharp pelvic pain and feel like fainting.")
+        self.assertEqual(emg_intent["category"], "emergency")
+        self.assertEqual(emg_intent["urgency"], "emergency")
+
 if __name__ == '__main__':
     unittest.main()
+
