@@ -990,5 +990,5 @@ app.register_blueprint(companion_bp, url_prefix='/api/companion')
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
     default_debug = "True" if is_development_mode() else "False"
-    debug_mode = os.getenv("FLASK_DEBUG", default_debug).lower() == "true"
-    app.run(debug=debug_mode, port=port)
+    host = os.getenv("HOST", "0.0.0.0")
+    app.run(host=host, debug=debug_mode, port=port)
