@@ -20,6 +20,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import Community from './components/Community';
+import Companion from './components/Companion';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -758,7 +759,7 @@ function App() {
   return (
     <div className="min-h-screen bg-[#F5F3FF] pb-44 pt-4 px-4 sm:px-8">
       {/* Top Header */}
-      <header className={`${activeTab === 'community' ? 'max-w-5xl' : 'max-w-4xl'} mx-auto flex justify-between items-center mb-6 pt-2 transition-all`}>
+      <header className={`${(activeTab === 'community' || activeTab === 'companion') ? 'max-w-5xl' : 'max-w-4xl'} mx-auto flex justify-between items-center mb-6 pt-2 transition-all`}>
         <div className="flex items-center space-x-2">
           <div className="bg-primary p-1.5 rounded-xl text-white shadow-soft">
             <Heart size={20} className="fill-white" />
@@ -792,7 +793,7 @@ function App() {
       </header>
 
       {/* Main Tab Panels */}
-      <main className={`${activeTab === 'community' ? 'max-w-5xl' : 'max-w-4xl'} mx-auto transition-all`}>
+      <main className={`${(activeTab === 'community' || activeTab === 'companion') ? 'max-w-5xl' : 'max-w-4xl'} mx-auto transition-all`}>
         {loading && (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary border-t-transparent mb-2"></div>
@@ -1481,16 +1482,22 @@ function App() {
             {activeTab === 'community' && (
               <Community user={user} token={token} apiBase={API_BASE} />
             )}
+
+            {/* 3D AI Companion Module Tab */}
+            {activeTab === 'companion' && (
+              <Companion user={user} token={token} apiBase={API_BASE} />
+            )}
           </>
         )}
       </main>
 
       {/* Floating Bottom Nav Bar */}
-      <nav className="fixed bottom-6 left-1/2 transform -translate-x-1/2 glass-panel rounded-full px-5 py-3 flex space-x-6 sm:space-x-8 items-center shadow-lg border border-white/60 z-50">
+      <nav className="fixed bottom-6 left-1/2 transform -translate-x-1/2 glass-panel rounded-full px-4 sm:px-6 py-2.5 sm:py-3 flex space-x-3.5 sm:space-x-6 items-center shadow-lg border border-white/60 z-50">
         {[
           { tab: 'dashboard', icon: Home, label: 'Home' },
-          { tab: 'calendar', icon: CalendarIcon, label: 'Calendar' },
+          { tab: 'companion', icon: Sparkles, label: 'Companion' },
           { tab: 'community', icon: MessageSquare, label: 'Community' },
+          { tab: 'calendar', icon: CalendarIcon, label: 'Calendar' },
           { tab: 'logs', icon: Heart, label: 'Logs' },
           { tab: 'analytics', icon: BarChart2, label: 'Charts' },
           { tab: 'profile', icon: User, label: 'Settings' }
