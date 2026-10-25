@@ -15,6 +15,7 @@ import {
   Settings,
   Database,
   ArrowRight,
+  ArrowLeft,
   LogOut,
   Bell,
   MessageSquare,
@@ -36,6 +37,7 @@ import {
 } from 'lucide-react';
 import Community from './components/Community';
 import Companion from './components/Companion';
+import LandingPage from './components/LandingPage';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -63,28 +65,7 @@ ChartJS.register(
   ArcElement
 );
 
-const resolveApiBase = () => {
-  const envUrl = import.meta.env.VITE_API_BASE_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
-    let clean = envUrl.trim().replace(/\/+$/, '');
-    if (!clean.endsWith('/api')) {
-      clean = `${clean}/api`;
-    }
-    return clean;
-  }
-  // When running in a deployed browser (e.g. hosted on Vercel)
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    if (window.__OVACARE_API_BASE__) {
-      return window.__OVACARE_API_BASE__;
-    }
-    // Default to relative /api when hosted without an explicit environment variable
-    return '/api';
-  }
-  // Local development default (connecting to local Flask backend)
-  return 'http://127.0.0.1:5000/api';
-};
-
-const API_BASE = resolveApiBase();
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api';
 
 function App() {
   // Navigation & Auth States
@@ -96,6 +77,17 @@ function App() {
     return localStorage.getItem('ovacare_token') || null;
   });
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  // Complete User Journey State: 'landing' (public root) | 'auth' (login/register) | 'app' (personal dashboard)
+  const [currentView, setCurrentView] = useState(() => {
+    const inAppSession = sessionStorage.getItem('ovacare_active_session');
+    const savedUser = localStorage.getItem('ovacare_user');
+    const savedToken = localStorage.getItem('ovacare_token');
+    if (inAppSession === 'true' && savedUser && savedToken) {
+      return 'app';
+    }
+    return 'landing';
+  });
 
   // Data States
   const [cycles, setCycles] = useState([]);
@@ -322,6 +314,9 @@ function App() {
         setToken(data.token);
         localStorage.setItem('ovacare_user', JSON.stringify(data.user));
         localStorage.setItem('ovacare_token', data.token);
+        sessionStorage.setItem('ovacare_active_session', 'true');
+        setCurrentView('app');
+        setActiveTab('dashboard');
         triggerToast(`Welcome back, ${data.user.username}!`);
       }
     } catch (err) {
@@ -357,6 +352,9 @@ function App() {
         setToken(data.token);
         localStorage.setItem('ovacare_user', JSON.stringify(data.user));
         localStorage.setItem('ovacare_token', data.token);
+        sessionStorage.setItem('ovacare_active_session', 'true');
+        setCurrentView('app');
+        setActiveTab('dashboard');
         triggerToast("Account created successfully!");
       }
     } catch (err) {
@@ -382,6 +380,9 @@ function App() {
         setToken(data.token);
         localStorage.setItem('ovacare_user', JSON.stringify(data.user));
         localStorage.setItem('ovacare_token', data.token);
+        sessionStorage.setItem('ovacare_active_session', 'true');
+        setCurrentView('app');
+        setActiveTab('dashboard');
         triggerToast(`Demo Mode active as ${data.user.username}!`);
       } else {
         triggerToast(data.error || "Demo mode not available", true);
@@ -394,10 +395,13 @@ function App() {
   };
 
   const handleLogout = () => {
-    setUser(null);
-    setToken(null);
+    sessionStorage.removeItem('ovacare_active_session');
     localStorage.removeItem('ovacare_user');
     localStorage.removeItem('ovacare_token');
+    setUser(null);
+    setToken(null);
+    setCurrentView('landing');
+    setActiveTab('dashboard');
     setCycles([]);
     setPrediction(null);
     setAnalytics(null);
@@ -1004,12 +1008,47 @@ function App() {
     "July", "August", "September", "October", "November", "December"
   ];
 
-  // Render Login page if not authorized
-  if (!user) {
+  // 1. PUBLIC LANDING PAGE (Default for visitors or returning users opening root)
+  if (currentView === 'landing') {
+    return (
+      <LandingPage
+        user={user}
+        onGetStarted={() => {
+          setAuthMode('register');
+          setCurrentView('auth');
+        }}
+        onLogin={() => {
+          setAuthMode('login');
+          setCurrentView('auth');
+        }}
+        onDemoMode={(demoEmail) => handleDemoMode(demoEmail)}
+        onGoToDashboard={() => {
+          sessionStorage.setItem('ovacare_active_session', 'true');
+          setCurrentView('app');
+        }}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // 2. AUTHENTICATION VIEW (Login / Create Account)
+  if (currentView === 'auth' || !user) {
     return (
       <div className="min-h-screen bg-gradient-to-tr from-purple-100 via-pink-50 to-indigo-100 flex flex-col justify-between p-6">
+        {/* Back to Home Navigation Button */}
+        <div className="max-w-md mx-auto w-full pt-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setCurrentView('landing')}
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-textSecondary hover:text-primary transition py-1.5 px-3 rounded-xl hover:bg-white/60 cursor-pointer"
+          >
+            <ArrowLeft size={15} />
+            <span>Back to Home</span>
+          </button>
+        </div>
+
         {/* Header Title */}
-        <div className="flex items-center justify-center space-x-2 pt-6">
+        <div className="flex items-center justify-center space-x-2 pt-2">
           <div className="bg-primary p-2 rounded-2xl text-white shadow-premium">
             <Heart size={28} className="fill-white" />
           </div>
@@ -1243,8 +1282,17 @@ function App() {
           )}
         </div>
 
-        {/* Quick Report/Admin/LogOut Access */}
+        {/* Quick Report/Admin/Landing/LogOut Access */}
         <div className="flex items-center space-x-2.5">
+          <button
+            onClick={() => setCurrentView('landing')}
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition glass-panel text-textSecondary hover:text-primary hover:bg-purple-100 cursor-pointer"
+            title="Explore Public Landing Page"
+          >
+            <Sparkles size={14} className="text-primary" />
+            <span className="hidden sm:inline">Landing Page</span>
+          </button>
+
           <button
             onClick={() => setActiveTab(activeTab === 'report' ? 'dashboard' : 'report')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition ${activeTab === 'report' ? 'bg-primary text-white shadow-md' : 'glass-panel text-primary hover:bg-purple-100'}`}
@@ -1565,10 +1613,10 @@ function App() {
                               <div
                                 title={`${d.dayName} (${d.dateStr}): ${d.isLogged ? 'Logged' : 'Not logged'}`}
                                 className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] transition ${d.isLogged
-                                    ? 'bg-primary text-white shadow-xs'
-                                    : d.isToday
-                                      ? 'border-2 border-dashed border-primary/50 text-primary bg-primary/5'
-                                      : 'bg-purple-50 text-textLight border border-purple-100'
+                                  ? 'bg-primary text-white shadow-xs'
+                                  : d.isToday
+                                    ? 'border-2 border-dashed border-primary/50 text-primary bg-primary/5'
+                                    : 'bg-purple-50 text-textLight border border-purple-100'
                                   }`}
                               >
                                 {d.isLogged ? <Check size={12} strokeWidth={3} /> : (d.isToday ? '·' : '')}

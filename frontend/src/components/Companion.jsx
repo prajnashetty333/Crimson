@@ -176,7 +176,7 @@ export default function Companion({ user, token, apiBase }) {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.abort();
-        } catch (e) {}
+        } catch (e) { }
       }
       window.speechSynthesis?.cancel();
     };
@@ -204,7 +204,7 @@ export default function Companion({ user, token, apiBase }) {
     const voices = window.speechSynthesis.getVoices();
     const femaleVoice = voices.find(v =>
       (v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Karen') ||
-       v.name.includes('Victoria') || v.name.includes('Zira') || v.name.includes('Google UK English Female')) &&
+        v.name.includes('Victoria') || v.name.includes('Zira') || v.name.includes('Google UK English Female')) &&
       v.lang.startsWith('en')
     ) || voices.find(v => v.lang.startsWith('en'));
 
@@ -330,12 +330,12 @@ export default function Companion({ user, token, apiBase }) {
   const effectiveState = isSpeaking
     ? 'speaking'
     : isListening
-    ? 'listening'
-    : isLoading
-    ? 'thinking'
-    : errorMsg
-    ? 'error'
-    : avatarState;
+      ? 'listening'
+      : isLoading
+        ? 'thinking'
+        : errorMsg
+          ? 'error'
+          : avatarState;
 
   // Check crisis keywords to prioritize urgent human safety
   const checkSafetyKeywords = (text) => {
@@ -411,13 +411,7 @@ export default function Companion({ user, token, apiBase }) {
         })
       });
 
-      let data = {};
-      try {
-        data = await res.json();
-      } catch (jsonErr) {
-        data = { error: `Server response error (${res.status}). Please try again in a moment.` };
-      }
-
+      const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Failed to receive reply from companion.');
       }
@@ -518,11 +512,10 @@ export default function Companion({ user, token, apiBase }) {
               if (voiceOutputEnabled) handleStopSpeaking();
               setVoiceOutputEnabled(!voiceOutputEnabled);
             }}
-            className={`p-2 rounded-xl text-xs font-medium border transition flex items-center space-x-1.5 cursor-pointer ${
-              voiceOutputEnabled
+            className={`p-2 rounded-xl text-xs font-medium border transition flex items-center space-x-1.5 cursor-pointer ${voiceOutputEnabled
                 ? 'bg-purple-50 text-primary border-purple-200 hover:bg-purple-100'
                 : 'bg-white text-textLight border-purple-100 hover:text-textSecondary'
-            }`}
+              }`}
             title={voiceOutputEnabled ? 'Voice output is active' : 'Voice output is muted'}
           >
             {voiceOutputEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
@@ -567,25 +560,23 @@ export default function Companion({ user, token, apiBase }) {
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center space-x-2">
                 <span className="relative flex h-2.5 w-2.5">
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                    effectiveState === 'speaking' ? 'bg-teal-500' :
-                    effectiveState === 'listening' ? 'bg-rose-500' :
-                    effectiveState === 'thinking' ? 'bg-indigo-500' :
-                    'bg-emerald-500'
-                  }`}></span>
-                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                    effectiveState === 'speaking' ? 'bg-teal-600' :
-                    effectiveState === 'listening' ? 'bg-rose-600' :
-                    effectiveState === 'thinking' ? 'bg-indigo-600' :
-                    'bg-emerald-600'
-                  }`}></span>
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${effectiveState === 'speaking' ? 'bg-teal-500' :
+                      effectiveState === 'listening' ? 'bg-rose-500' :
+                        effectiveState === 'thinking' ? 'bg-indigo-500' :
+                          'bg-emerald-500'
+                    }`}></span>
+                  <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${effectiveState === 'speaking' ? 'bg-teal-600' :
+                      effectiveState === 'listening' ? 'bg-rose-600' :
+                        effectiveState === 'thinking' ? 'bg-indigo-600' :
+                          'bg-emerald-600'
+                    }`}></span>
                 </span>
                 <span className="text-xs font-semibold text-textPrimary">
                   {effectiveState === 'speaking' ? 'Speaking response...' :
-                   effectiveState === 'listening' ? 'Listening…' :
-                   effectiveState === 'thinking' ? 'Thinking…' :
-                   effectiveState === 'error' ? 'Connection issue' :
-                   'Ready to listen and support'}
+                    effectiveState === 'listening' ? 'Listening…' :
+                      effectiveState === 'thinking' ? 'Thinking…' :
+                        effectiveState === 'error' ? 'Connection issue' :
+                          'Ready to listen and support'}
                 </span>
               </div>
 
@@ -630,20 +621,19 @@ export default function Companion({ user, token, apiBase }) {
                 type="button"
                 onClick={handleStartVoiceChat}
                 disabled={isLoading}
-                className={`h-12 px-4 rounded-2xl text-xs font-semibold flex items-center justify-center space-x-2 transition cursor-pointer shadow-soft active:scale-[0.98] ${
-                  isListening
+                className={`h-12 px-4 rounded-2xl text-xs font-semibold flex items-center justify-center space-x-2 transition cursor-pointer shadow-soft active:scale-[0.98] ${isListening
                     ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-200 ring-2 ring-rose-300 animate-pulse'
                     : isSpeaking
-                    ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-soft'
-                    : isLoading
-                    ? 'bg-purple-200 text-purple-700 cursor-not-allowed opacity-80'
-                    : 'bg-teal-700 hover:bg-teal-800 text-white shadow-soft'
-                }`}
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-soft'
+                      : isLoading
+                        ? 'bg-purple-200 text-purple-700 cursor-not-allowed opacity-80'
+                        : 'bg-teal-700 hover:bg-teal-800 text-white shadow-soft'
+                  }`}
                 title={
                   isListening ? 'Stop listening and send' :
-                  isSpeaking ? 'Stop speaking' :
-                  isLoading ? 'Formulating response...' :
-                  'Talk to companion using your voice'
+                    isSpeaking ? 'Stop speaking' :
+                      isLoading ? 'Formulating response...' :
+                        'Talk to companion using your voice'
                 }
               >
                 {isListening ? (
@@ -710,25 +700,23 @@ export default function Companion({ user, token, apiBase }) {
               <div className="flex items-center justify-between px-1">
                 <div className="flex items-center space-x-2">
                   <span className="relative flex h-2 w-2">
-                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      effectiveState === 'speaking' ? 'bg-teal-500' :
-                      effectiveState === 'listening' ? 'bg-rose-500' :
-                      effectiveState === 'thinking' ? 'bg-indigo-500' :
-                      'bg-emerald-500'
-                    }`}></span>
-                    <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                      effectiveState === 'speaking' ? 'bg-teal-600' :
-                      effectiveState === 'listening' ? 'bg-rose-600' :
-                      effectiveState === 'thinking' ? 'bg-indigo-600' :
-                      'bg-emerald-600'
-                    }`}></span>
+                    <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${effectiveState === 'speaking' ? 'bg-teal-500' :
+                        effectiveState === 'listening' ? 'bg-rose-500' :
+                          effectiveState === 'thinking' ? 'bg-indigo-500' :
+                            'bg-emerald-500'
+                      }`}></span>
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${effectiveState === 'speaking' ? 'bg-teal-600' :
+                        effectiveState === 'listening' ? 'bg-rose-600' :
+                          effectiveState === 'thinking' ? 'bg-indigo-600' :
+                            'bg-emerald-600'
+                      }`}></span>
                   </span>
                   <span className="text-[11px] font-medium text-textSecondary">
                     {effectiveState === 'speaking' ? 'Speaking response...' :
-                     effectiveState === 'listening' ? 'Listening to your voice...' :
-                     effectiveState === 'thinking' ? 'Formulating guidance...' :
-                     effectiveState === 'error' ? 'Connection issue' :
-                     'Ready to listen and support'}
+                      effectiveState === 'listening' ? 'Listening to your voice...' :
+                        effectiveState === 'thinking' ? 'Formulating guidance...' :
+                          effectiveState === 'error' ? 'Connection issue' :
+                            'Ready to listen and support'}
                   </span>
                 </div>
 
@@ -739,15 +727,14 @@ export default function Companion({ user, token, apiBase }) {
                 <button
                   type="button"
                   onClick={handleStartVoiceChat}
-                  className={`h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition cursor-pointer shadow-2xs active:scale-[0.98] ${
-                    chatMode === 'voice' && isListening
+                  className={`h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition cursor-pointer shadow-2xs active:scale-[0.98] ${chatMode === 'voice' && isListening
                       ? 'bg-rose-600 text-white shadow-rose-200 ring-2 ring-rose-300 animate-pulse'
                       : isSpeaking
-                      ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-soft'
-                      : chatMode === 'voice'
-                      ? 'bg-teal-700 text-white ring-2 ring-teal-500/30 shadow-soft'
-                      : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/80'
-                  }`}
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-soft'
+                        : chatMode === 'voice'
+                          ? 'bg-teal-700 text-white ring-2 ring-teal-500/30 shadow-soft'
+                          : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/80'
+                    }`}
                   title={isSpeaking ? 'Stop speaking' : 'Switch to voice mode'}
                 >
                   {isSpeaking ? (
@@ -766,11 +753,10 @@ export default function Companion({ user, token, apiBase }) {
                 <button
                   type="button"
                   onClick={handleStartTextChat}
-                  className={`h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition cursor-pointer shadow-2xs active:scale-[0.98] border ${
-                    chatMode === 'text'
+                  className={`h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition cursor-pointer shadow-2xs active:scale-[0.98] border ${chatMode === 'text'
                       ? 'bg-purple-100 text-primary border-purple-300 ring-2 ring-purple-300/40'
                       : 'bg-[#FAF8FC] hover:bg-purple-50 text-textPrimary border-purple-200/80'
-                  }`}
+                    }`}
                   title="Switch to text mode"
                 >
                   <MessageSquare size={15} className="text-teal-700" />
@@ -796,11 +782,10 @@ export default function Companion({ user, token, apiBase }) {
             {/* Chat Panel Top Control Bar */}
             <div className="px-4 py-2.5 bg-purple-50/60 border-b border-purple-100 flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-2">
-                <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${
-                  chatMode === 'voice'
+                <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border ${chatMode === 'voice'
                     ? 'bg-teal-100 text-teal-800 border-teal-200'
                     : 'bg-purple-100 text-primary border-purple-200'
-                }`}>
+                  }`}>
                   {chatMode === 'voice' ? '🎙️ Voice Mode' : '💬 Text Mode'}
                 </span>
                 <span className="text-xs font-bold text-textPrimary hidden sm:inline">
@@ -826,11 +811,10 @@ export default function Companion({ user, token, apiBase }) {
                     if (voiceOutputEnabled) handleStopSpeaking();
                     setVoiceOutputEnabled(!voiceOutputEnabled);
                   }}
-                  className={`p-1.5 rounded-lg text-xs border transition cursor-pointer ${
-                    voiceOutputEnabled
+                  className={`p-1.5 rounded-lg text-xs border transition cursor-pointer ${voiceOutputEnabled
                       ? 'bg-purple-50 text-primary border-purple-200'
                       : 'bg-white text-textLight border-purple-100'
-                  }`}
+                    }`}
                   title={voiceOutputEnabled ? 'Voice reply enabled' : 'Voice reply muted'}
                 >
                   {voiceOutputEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
@@ -858,276 +842,273 @@ export default function Companion({ user, token, apiBase }) {
 
             {/* Chat Messages Scroll Container */}
             <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4">
-            {messages.map((msg) => {
-              const isUser = msg.role === 'user';
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex items-start space-x-2.5 ${isUser ? 'flex-row-reverse space-x-reverse' : 'flex-row'}`}
-                >
-                  {/* Avatar Icon */}
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-2xs overflow-hidden border ${
-                    isUser
-                      ? 'bg-primary text-white text-xs font-semibold border-primary/20'
-                      : 'border-purple-200 bg-purple-50'
-                  }`}>
-                    {isUser ? (
-                      'You'
-                    ) : (
-                      <img
-                        src="/images/ovacare-girl.png"
-                        alt="OvaCare Companion"
-                        className="w-full h-full object-cover"
-                      />
-                    )}
-                  </div>
-
-                  {/* Message Bubble */}
-                  <div className={`max-w-[82%] sm:max-w-[76%] rounded-2xl px-4 py-3 text-xs leading-relaxed space-y-1.5 shadow-2xs ${
-                    isUser
-                      ? 'bg-primary text-white rounded-tr-none'
-                      : 'bg-purple-50/60 border border-purple-100 text-textPrimary rounded-tl-none'
-                  }`}>
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
-
-                    {/* Emergency Red-Flag Advisory Box */}
-                    {msg.urgency === 'emergency' && (
-                      <div className="mt-2 p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-[11px] space-y-1">
-                        <div className="font-bold flex items-center gap-1.5 text-rose-700">
-                          <AlertTriangle size={13} className="shrink-0" />
-                          <span>Emergency Medical Advisory</span>
-                        </div>
-                        <p className="leading-snug">
-                          If you are experiencing sudden severe pain, heavy hemorrhaging, or fainting, please contact local emergency services (911 / 999 / 112) or go to the nearest emergency department immediately.
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Limited Evidence / Emerging Research Badge */}
-                    {msg.confidence === 'limited' && (
-                      <div className="mt-1.5 inline-flex items-center space-x-1 text-[9px] font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                        <Info size={10} className="shrink-0" />
-                        <span>Evidence status: Emerging research / Low certainty</span>
-                      </div>
-                    )}
-
-                    {/* Expandable Evidence Sources Section */}
-                    {msg.sources && msg.sources.length > 0 && (
-                      <div className="mt-2 pt-1 border-t border-purple-100/80">
-                        <button
-                          type="button"
-                          onClick={() => toggleSources(msg.id)}
-                          className="flex items-center space-x-1.5 text-[10px] font-semibold text-teal-800 hover:text-teal-900 bg-teal-50 hover:bg-teal-100/80 px-2.5 py-1 rounded-lg border border-teal-200/80 transition cursor-pointer"
-                        >
-                          <BookOpen size={11} className="text-teal-700" />
-                          <span>
-                            {expandedSources[msg.id] ? 'Hide Clinical Sources' : `Verified Evidence Sources (${msg.sources.length})`}
-                          </span>
-                          <ChevronDown
-                            size={11}
-                            className={`transition-transform duration-200 ${expandedSources[msg.id] ? 'rotate-180' : ''}`}
-                          />
-                        </button>
-
-                        {expandedSources[msg.id] && (
-                          <div className="mt-2 space-y-1.5 animate-fade-in">
-                            {msg.sources.map((src, sIdx) => (
-                              <div
-                                key={sIdx}
-                                className="bg-white/95 rounded-xl p-2.5 border border-purple-100 text-[10px] space-y-1 shadow-2xs"
-                              >
-                                <div className="flex items-center justify-between text-textLight">
-                                  <span className="font-bold text-teal-800">{src.organization}</span>
-                                  <span>{src.date}</span>
-                                </div>
-                                <div className="font-medium text-textPrimary leading-snug">
-                                  {src.title}
-                                </div>
-                                {src.evidence_level && (
-                                  <div className="text-[9px] text-purple-700 italic">
-                                    {src.evidence_level}
-                                  </div>
-                                )}
-                                {src.url && (
-                                  <div className="pt-0.5">
-                                    <a
-                                      href={src.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center space-x-1 text-primary hover:underline font-semibold"
-                                    >
-                                      <span>View clinical guidance</span>
-                                      <ExternalLink size={10} />
-                                    </a>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Metadata & Audio Replay */}
-                    <div className={`flex items-center justify-between text-[10px] pt-1 ${isUser ? 'text-purple-200' : 'text-textLight'}`}>
-                      <span>{msg.timestamp}</span>
-                      {!isUser && (
-                        <button
-                          onClick={() => speakText(msg.content, true)}
-                          className="hover:text-primary transition flex items-center space-x-1 cursor-pointer ml-3"
-                          title="Read this response aloud"
-                        >
-                          <Volume2 size={12} />
-                          <span className="text-[10px]">Listen</span>
-                        </button>
+              {messages.map((msg) => {
+                const isUser = msg.role === 'user';
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex items-start space-x-2.5 ${isUser ? 'flex-row-reverse space-x-reverse' : 'flex-row'}`}
+                  >
+                    {/* Avatar Icon */}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-2xs overflow-hidden border ${isUser
+                        ? 'bg-primary text-white text-xs font-semibold border-primary/20'
+                        : 'border-purple-200 bg-purple-50'
+                      }`}>
+                      {isUser ? (
+                        'You'
+                      ) : (
+                        <img
+                          src="/images/ovacare-girl.png"
+                          alt="OvaCare Companion"
+                          className="w-full h-full object-cover"
+                        />
                       )}
                     </div>
+
+                    {/* Message Bubble */}
+                    <div className={`max-w-[82%] sm:max-w-[76%] rounded-2xl px-4 py-3 text-xs leading-relaxed space-y-1.5 shadow-2xs ${isUser
+                        ? 'bg-primary text-white rounded-tr-none'
+                        : 'bg-purple-50/60 border border-purple-100 text-textPrimary rounded-tl-none'
+                      }`}>
+                      <div className="whitespace-pre-wrap">{msg.content}</div>
+
+                      {/* Emergency Red-Flag Advisory Box */}
+                      {msg.urgency === 'emergency' && (
+                        <div className="mt-2 p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-[11px] space-y-1">
+                          <div className="font-bold flex items-center gap-1.5 text-rose-700">
+                            <AlertTriangle size={13} className="shrink-0" />
+                            <span>Emergency Medical Advisory</span>
+                          </div>
+                          <p className="leading-snug">
+                            If you are experiencing sudden severe pain, heavy hemorrhaging, or fainting, please contact local emergency services (911 / 999 / 112) or go to the nearest emergency department immediately.
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Limited Evidence / Emerging Research Badge */}
+                      {msg.confidence === 'limited' && (
+                        <div className="mt-1.5 inline-flex items-center space-x-1 text-[9px] font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                          <Info size={10} className="shrink-0" />
+                          <span>Evidence status: Emerging research / Low certainty</span>
+                        </div>
+                      )}
+
+                      {/* Expandable Evidence Sources Section */}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className="mt-2 pt-1 border-t border-purple-100/80">
+                          <button
+                            type="button"
+                            onClick={() => toggleSources(msg.id)}
+                            className="flex items-center space-x-1.5 text-[10px] font-semibold text-teal-800 hover:text-teal-900 bg-teal-50 hover:bg-teal-100/80 px-2.5 py-1 rounded-lg border border-teal-200/80 transition cursor-pointer"
+                          >
+                            <BookOpen size={11} className="text-teal-700" />
+                            <span>
+                              {expandedSources[msg.id] ? 'Hide Clinical Sources' : `Verified Evidence Sources (${msg.sources.length})`}
+                            </span>
+                            <ChevronDown
+                              size={11}
+                              className={`transition-transform duration-200 ${expandedSources[msg.id] ? 'rotate-180' : ''}`}
+                            />
+                          </button>
+
+                          {expandedSources[msg.id] && (
+                            <div className="mt-2 space-y-1.5 animate-fade-in">
+                              {msg.sources.map((src, sIdx) => (
+                                <div
+                                  key={sIdx}
+                                  className="bg-white/95 rounded-xl p-2.5 border border-purple-100 text-[10px] space-y-1 shadow-2xs"
+                                >
+                                  <div className="flex items-center justify-between text-textLight">
+                                    <span className="font-bold text-teal-800">{src.organization}</span>
+                                    <span>{src.date}</span>
+                                  </div>
+                                  <div className="font-medium text-textPrimary leading-snug">
+                                    {src.title}
+                                  </div>
+                                  {src.evidence_level && (
+                                    <div className="text-[9px] text-purple-700 italic">
+                                      {src.evidence_level}
+                                    </div>
+                                  )}
+                                  {src.url && (
+                                    <div className="pt-0.5">
+                                      <a
+                                        href={src.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center space-x-1 text-primary hover:underline font-semibold"
+                                      >
+                                        <span>View clinical guidance</span>
+                                        <ExternalLink size={10} />
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Metadata & Audio Replay */}
+                      <div className={`flex items-center justify-between text-[10px] pt-1 ${isUser ? 'text-purple-200' : 'text-textLight'}`}>
+                        <span>{msg.timestamp}</span>
+                        {!isUser && (
+                          <button
+                            onClick={() => speakText(msg.content, true)}
+                            className="hover:text-primary transition flex items-center space-x-1 cursor-pointer ml-3"
+                            title="Read this response aloud"
+                          >
+                            <Volume2 size={12} />
+                            <span className="text-[10px]">Listen</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Thinking / Typing indicator */}
+              {isLoading && (
+                <div className="flex items-start space-x-2.5">
+                  <div className="w-8 h-8 rounded-full overflow-hidden border border-purple-200 bg-purple-50 shrink-0 shadow-2xs">
+                    <img
+                      src="/images/ovacare-girl.png"
+                      alt="OvaCare Companion"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="bg-purple-50/60 border border-purple-100 rounded-2xl rounded-tl-none px-4 py-3 text-xs text-textSecondary flex items-center space-x-2 shadow-2xs animate-pulse">
+                    <div className="flex space-x-1">
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div>
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                      <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.4s]"></div>
+                    </div>
+                    <span className="text-[11px] font-medium text-textSecondary">OvaCare Companion is formulating guidance...</span>
                   </div>
                 </div>
-              );
-            })}
+              )}
 
-            {/* Thinking / Typing indicator */}
-            {isLoading && (
-              <div className="flex items-start space-x-2.5">
-                <div className="w-8 h-8 rounded-full overflow-hidden border border-purple-200 bg-purple-50 shrink-0 shadow-2xs">
-                  <img
-                    src="/images/ovacare-girl.png"
-                    alt="OvaCare Companion"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div className="bg-purple-50/60 border border-purple-100 rounded-2xl rounded-tl-none px-4 py-3 text-xs text-textSecondary flex items-center space-x-2 shadow-2xs animate-pulse">
-                  <div className="flex space-x-1">
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></div>
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.2s]"></div>
-                    <div className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.4s]"></div>
+              {/* Error Banner */}
+              {errorMsg && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-800 px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-between animate-fade-in">
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle size={15} className="text-rose-500 shrink-0" />
+                    <span className="font-medium">{errorMsg}</span>
                   </div>
-                  <span className="text-[11px] font-medium text-textSecondary">OvaCare Companion is formulating guidance...</span>
+                  <button
+                    onClick={() => setErrorMsg(null)}
+                    className="text-rose-600 hover:text-rose-900 cursor-pointer ml-2"
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Error Banner */}
-            {errorMsg && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-800 px-3.5 py-2.5 rounded-xl text-xs flex items-center justify-between animate-fade-in">
-                <div className="flex items-center space-x-2">
-                  <AlertTriangle size={15} className="text-rose-500 shrink-0" />
-                  <span className="font-medium">{errorMsg}</span>
-                </div>
-                <button
-                  onClick={() => setErrorMsg(null)}
-                  className="text-rose-600 hover:text-rose-900 cursor-pointer ml-2"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Quick Suggestion Chips (shown when few messages) */}
-          {messages.length <= 4 && !isLoading && (
-            <div className="px-4 py-2.5 bg-purple-50/40 border-t border-purple-100/70 flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold text-textLight uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
-                <Sparkles size={11} className="text-teal-700" /> Suggestions:
-              </span>
-              {SUGGESTED_TOPICS.map((topic, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSendMessage(topic)}
-                  className="px-3 py-1 rounded-full bg-white hover:bg-purple-100/80 text-textSecondary hover:text-teal-800 text-[11px] font-medium border border-purple-100/90 transition cursor-pointer shadow-2xs hover:shadow-xs"
-                >
-                  {topic}
-                </button>
-              ))}
+              <div ref={messagesEndRef} />
             </div>
-          )}
 
-          {/* Live Voice Transcript Floating Box */}
-          {isListening && (
-            <div className="px-4 py-2.5 bg-rose-50 border-t border-rose-200 text-rose-900 text-xs flex items-center justify-between animate-fade-in">
-              <div className="flex items-center space-x-2 truncate">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+            {/* Quick Suggestion Chips (shown when few messages) */}
+            {messages.length <= 4 && !isLoading && (
+              <div className="px-4 py-2.5 bg-purple-50/40 border-t border-purple-100/70 flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-bold text-textLight uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                  <Sparkles size={11} className="text-teal-700" /> Suggestions:
                 </span>
-                <span className="font-semibold text-[11px] shrink-0">Hearing:</span>
-                <span className="truncate italic text-rose-700">{voiceTranscript || 'Speak into your microphone...'}</span>
+                {SUGGESTED_TOPICS.map((topic, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleSendMessage(topic)}
+                    className="px-3 py-1 rounded-full bg-white hover:bg-purple-100/80 text-textSecondary hover:text-teal-800 text-[11px] font-medium border border-purple-100/90 transition cursor-pointer shadow-2xs hover:shadow-xs"
+                  >
+                    {topic}
+                  </button>
+                ))}
               </div>
-              <button
-                onClick={() => handleSendMessage()}
-                disabled={!voiceTranscript.trim()}
-                className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-[11px] font-semibold px-3 py-1 rounded-lg transition cursor-pointer shrink-0 ml-2 shadow-2xs"
-              >
-                Send Words
-              </button>
-            </div>
-          )}
+            )}
 
-          {/* Input & Voice Controls Footer */}
-          <div className="p-3.5 sm:p-4 border-t border-purple-100 bg-white/95 shrink-0">
-            <div className="flex items-center space-x-2.5">
-              {/* Voice Input Microphone Button */}
-              <button
-                type="button"
-                onClick={handleToggleVoiceInput}
-                className={`h-11 w-11 rounded-2xl transition cursor-pointer flex items-center justify-center shrink-0 shadow-2xs ${
-                  isListening
-                    ? 'bg-rose-600 text-white shadow-rose-200 animate-pulse ring-2 ring-rose-300'
-                    : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/80'
-                }`}
-                title={isListening ? 'Stop listening' : 'Start voice input (speech-to-text)'}
-              >
-                {isListening ? <MicOff size={19} /> : <Mic size={19} />}
-              </button>
-
-              {/* Text Input */}
-              <div className="flex-1 relative flex items-center">
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={isListening ? "Listening to your voice..." : "Ask your companion anything (Enter to send)..."}
-                  disabled={isLoading}
-                  maxLength={1000}
-                  className="w-full h-11 pl-4 pr-10 text-xs rounded-2xl border border-purple-100/90 focus:outline-none focus:ring-1.5 focus:ring-teal-700 focus:border-teal-700 bg-purple-50/20 text-textPrimary placeholder:text-textLight transition shadow-2xs"
-                />
-                {inputText.length > 800 && (
-                  <span className="absolute right-3 text-[10px] text-textLight font-mono">
-                    {1000 - inputText.length}
+            {/* Live Voice Transcript Floating Box */}
+            {isListening && (
+              <div className="px-4 py-2.5 bg-rose-50 border-t border-rose-200 text-rose-900 text-xs flex items-center justify-between animate-fade-in">
+                <div className="flex items-center space-x-2 truncate">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                   </span>
-                )}
+                  <span className="font-semibold text-[11px] shrink-0">Hearing:</span>
+                  <span className="truncate italic text-rose-700">{voiceTranscript || 'Speak into your microphone...'}</span>
+                </div>
+                <button
+                  onClick={() => handleSendMessage()}
+                  disabled={!voiceTranscript.trim()}
+                  className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-[11px] font-semibold px-3 py-1 rounded-lg transition cursor-pointer shrink-0 ml-2 shadow-2xs"
+                >
+                  Send Words
+                </button>
+              </div>
+            )}
+
+            {/* Input & Voice Controls Footer */}
+            <div className="p-3.5 sm:p-4 border-t border-purple-100 bg-white/95 shrink-0">
+              <div className="flex items-center space-x-2.5">
+                {/* Voice Input Microphone Button */}
+                <button
+                  type="button"
+                  onClick={handleToggleVoiceInput}
+                  className={`h-11 w-11 rounded-2xl transition cursor-pointer flex items-center justify-center shrink-0 shadow-2xs ${isListening
+                      ? 'bg-rose-600 text-white shadow-rose-200 animate-pulse ring-2 ring-rose-300'
+                      : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/80'
+                    }`}
+                  title={isListening ? 'Stop listening' : 'Start voice input (speech-to-text)'}
+                >
+                  {isListening ? <MicOff size={19} /> : <Mic size={19} />}
+                </button>
+
+                {/* Text Input */}
+                <div className="flex-1 relative flex items-center">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={isListening ? "Listening to your voice..." : "Ask your companion anything (Enter to send)..."}
+                    disabled={isLoading}
+                    maxLength={1000}
+                    className="w-full h-11 pl-4 pr-10 text-xs rounded-2xl border border-purple-100/90 focus:outline-none focus:ring-1.5 focus:ring-teal-700 focus:border-teal-700 bg-purple-50/20 text-textPrimary placeholder:text-textLight transition shadow-2xs"
+                  />
+                  {inputText.length > 800 && (
+                    <span className="absolute right-3 text-[10px] text-textLight font-mono">
+                      {1000 - inputText.length}
+                    </span>
+                  )}
+                </div>
+
+                {/* Send Button */}
+                <button
+                  type="button"
+                  onClick={() => handleSendMessage()}
+                  disabled={!inputText.trim() || isLoading}
+                  className="h-11 w-11 bg-teal-700 hover:bg-teal-800 disabled:opacity-40 text-white rounded-2xl transition cursor-pointer shadow-soft flex items-center justify-center shrink-0"
+                  title="Send message"
+                >
+                  <Send size={17} />
+                </button>
               </div>
 
-              {/* Send Button */}
-              <button
-                type="button"
-                onClick={() => handleSendMessage()}
-                disabled={!inputText.trim() || isLoading}
-                className="h-11 w-11 bg-teal-700 hover:bg-teal-800 disabled:opacity-40 text-white rounded-2xl transition cursor-pointer shadow-soft flex items-center justify-center shrink-0"
-                title="Send message"
-              >
-                <Send size={17} />
-              </button>
-            </div>
-
-            {/* Micro Safe Health Footer */}
-            <div className="flex items-center justify-between mt-2 px-1 text-[10px] text-textLight">
-              <span>OvaCare AI provides general wellness support • Not clinical advice</span>
-              <button
-                onClick={() => setShowDisclaimer(true)}
-                className="text-teal-700 hover:underline font-medium cursor-pointer"
-              >
-                Disclaimer
-              </button>
+              {/* Micro Safe Health Footer */}
+              <div className="flex items-center justify-between mt-2 px-1 text-[10px] text-textLight">
+                <span>OvaCare AI provides general wellness support • Not clinical advice</span>
+                <button
+                  onClick={() => setShowDisclaimer(true)}
+                  className="text-teal-700 hover:underline font-medium cursor-pointer"
+                >
+                  Disclaimer
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* ======================================================== */}

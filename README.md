@@ -14,7 +14,7 @@
 [![Cloudflare Workers AI](https://img.shields.io/badge/Cloudflare_Workers_AI-Llama--3.1--8B-orange.svg)](https://developers.cloudflare.com/workers-ai/)
 [![Tests: 160 Passed](https://img.shields.io/badge/Tests-160%20Passed-success.svg)](backend/tests/)
 
-[**⚡ Quick Start**](#-quick-start-3-minutes) · [**🎬 Judge Walkthrough**](#-5-minute-judge-walkthrough) · [**🏛️ Architecture**](#️-system-architecture) · [**📊 Methodology**](#-forecasting-methodology) · [**🛡️ Safety**](#️-ai-companion-architecture--safety) · [**🔮 Roadmap**](#-FutureImprovements)
+[**⚡ Quick Start**](#-quick-start-3-minutes) · [**🎬 Judge Walkthrough**](#-5-minute-judge-walkthrough) · [**🏛️ Architecture**](#️-system-architecture) · [**📊 Methodology**](#-forecasting-methodology) · [**🛡️ Safety**](#️-ai-companion-architecture--safety) · [**🔮 Roadmap**](#-futureimprovements)
 
 </div>
 
