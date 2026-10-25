@@ -14,7 +14,7 @@
 [![Cloudflare Workers AI](https://img.shields.io/badge/Cloudflare_Workers_AI-Llama--3.1--8B-orange.svg)](https://developers.cloudflare.com/workers-ai/)
 [![Tests: 160 Passed](https://img.shields.io/badge/Tests-160%20Passed-success.svg)](backend/tests/)
 
-[**⚡ Quick Start**](#-quick-start-3-minutes) · [**🎬 Judge Walkthrough**](#-5-minute-judge-walkthrough) · [**🏛️ Architecture**](#️-system-architecture) · [**📊 Methodology**](#-forecasting-methodology) · [**🛡️ Safety**](#️-ai-companion-architecture--safety) · [**🔮 Roadmap**](#-roadmap)
+[**⚡ Quick Start**](#-quick-start-3-minutes) · [**🎬 Judge Walkthrough**](#-5-minute-judge-walkthrough) · [**🏛️ Architecture**](#️-system-architecture) · [**📊 Methodology**](#-forecasting-methodology) · [**🛡️ Safety**](#️-ai-companion-architecture--safety) · [**🔮 Roadmap**](#-futureimprovements)
 
 </div>
 
@@ -40,7 +40,7 @@ Traditional period trackers treat biology like a clock. For the roughly **1 in 1
 
 1. 🎯 **Uncertainty-aware prediction.** Forecasts come with confidence tiers and a plain-language reason, never a fake-precise date.
 2. 🧩 **Gap-aware history.** A forgotten logging month is not a medical irregularity, and the app asks the user instead of guessing.
-3. 🩺 **A clinically segregated doctor report.** Facts, statistical estimates, and subjective symptoms are never blended.
+3. 🩺 ** An overall health report.** Facts, statistical estimates, and subjective symptoms are never blended.
 4. 🛡️ **A safety-first RAG companion.** Emergencies are caught by deterministic rules *before* any LLM is called, and only verified citations are shown.
 
 ---
@@ -473,13 +473,17 @@ ovacare/
 
 ---
 
-## 🔮 Roadmap (Future work)
+## 🔮 Future Improvements
 
-- [ ] **Mobile app** (React Native / Expo) for iOS and Android
-- [ ] **FHIR / Apple HealthKit** bidirectional sync (SMART on FHIR)
-- [ ] **Multilingual clinical RAG** (Spanish, Hindi, French)
-- [ ] **BBT & LH strip scanning** via computer vision
 
+- Machine Learning-Based Predictions: Train ML models on larger, diverse datasets to improve cycle forecasting and personalize estimates.
+- Advanced Pattern Recognition: Use ML to identify relationships between cycle phases, symptoms, mood, sleep, and energy.
+- Personalized AI Companion: Enhance responses using user-approved health history and context-aware recommendations.
+- Multilingual Voice Support: Add regional languages and more natural voice conversations.
+- Wearable Integration: Integrate data from smartwatches and health platforms for richer insights.
+- Clinical Validation: Collaborate with healthcare professionals to evaluate prediction reliability and health guidance.
+- Privacy-First Personalization: Introduce secure, consent-based health data controls and transparent AI processing.
+- Early Risk-Pattern Alerts: Explore validated methods to flag concerning symptom patterns and recommend appropriate medical consultation.
 ---
 <div align="center">
 

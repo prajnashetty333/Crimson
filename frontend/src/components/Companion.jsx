@@ -29,15 +29,15 @@ import CompanionAvatar3D from './CompanionAvatar3D';
 const INITIAL_MESSAGE = {
   id: 'init_welcome',
   role: 'assistant',
-  content: "Hello, I'm your OvaCare Companion 🌸. I'm here to support you with calm, evidence-informed guidance on PCOS, menstrual health, hormonal balance, and everyday wellbeing. How are you feeling today?",
+  content: "Hey there! I'm here to chat about whatever is on your mind—how your day went, what you're up to, or any health and wellness questions whenever you want to explore them. How are you doing today?",
   timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 };
 
 const SUGGESTED_TOPICS = [
-  "🌸 What foods help manage insulin resistance in PCOS?",
-  "🌙 Gentle ways to lower evening cortisol & improve sleep",
-  "💧 Remedies for easing painful menstrual cramps",
-  "✨ Explaining why I feel fatigued during the luteal phase"
+  "☕ How's your day going?",
+  "🎬 Suggest a cozy movie to watch",
+  "🌸 Can PCOS affect menstrual cycle length?",
+  "💧 Gentle remedies for easing painful cramps"
 ];
 
 export default function Companion({ user, token, apiBase }) {
@@ -493,7 +493,7 @@ export default function Companion({ user, token, apiBase }) {
               <h1 className="text-lg font-bold text-textPrimary tracking-tight">OvaCare AI Companion</h1>
             </div>
             <p className="text-xs text-textSecondary">
-              Empathetic, evidence-informed menstrual & PCOS wellness support
+              Your conversational friend for daily life, listening, and evidence-grounded health answers
             </p>
           </div>
         </div>
