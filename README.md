@@ -473,7 +473,7 @@ ovacare/
 
 ---
 
-## 🔮 Roadmap
+## 🔮 Roadmap (Future work)
 
 - [ ] **Mobile app** (React Native / Expo) for iOS and Android
 - [ ] **FHIR / Apple HealthKit** bidirectional sync (SMART on FHIR)
@@ -481,18 +481,6 @@ ovacare/
 - [ ] **BBT & LH strip scanning** via computer vision
 
 ---
-
-## 👥 Team & Acknowledgements
-
-| Name | Role |
-|---|---|
-| *Your name* | Architecture & Development |
-| *Teammate(s)* | *Role* |
-
-**Clinical evidence basis:** built in alignment with the *2023 International Evidence-based Guideline for the Assessment and Management of PCOS* (Monash University Centre for Health Research and Implementation, ESHRE, and ASRM).
-
----
-
 <div align="center">
 
 **OvaCare AI** · Designed with care for menstrual health, clinical clarity, and personal wellbeing.
