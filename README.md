@@ -473,13 +473,17 @@ ovacare/
 
 ---
 
-## 🔮 Roadmap (Future work)
+## 🔮 Future Improvements
 
-- [ ] **Mobile app** (React Native / Expo) for iOS and Android
-- [ ] **FHIR / Apple HealthKit** bidirectional sync (SMART on FHIR)
-- [ ] **Multilingual clinical RAG** (Spanish, Hindi, French)
-- [ ] **BBT & LH strip scanning** via computer vision
 
+- Machine Learning-Based Predictions: Train ML models on larger, diverse datasets to improve cycle forecasting and personalize estimates.
+- Advanced Pattern Recognition: Use ML to identify relationships between cycle phases, symptoms, mood, sleep, and energy.
+- Personalized AI Companion: Enhance responses using user-approved health history and context-aware recommendations.
+- Multilingual Voice Support: Add regional languages and more natural voice conversations.
+- Wearable Integration: Integrate data from smartwatches and health platforms for richer insights.
+- Clinical Validation: Collaborate with healthcare professionals to evaluate prediction reliability and health guidance.
+- Privacy-First Personalization: Introduce secure, consent-based health data controls and transparent AI processing.
+- Early Risk-Pattern Alerts: Explore validated methods to flag concerning symptom patterns and recommend appropriate medical consultation.
 ---
 <div align="center">
 
