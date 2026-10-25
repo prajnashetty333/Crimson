@@ -411,7 +411,8 @@ npm run dev              # → http://localhost:5173
 
 ```powershell
 cd backend
-.\venv\Scripts\python.exe -m unittest discover tests
+.\venv\Scripts\python.exe -m
+python app.py
 # Ran 160 tests in 2.82s — OK
 ```
 
@@ -429,7 +430,7 @@ cd backend
 
 ```powershell
 cd frontend
-npm run build
+npm run dev
 # ✓ built in 1.13s  ·  index.css 55.27 kB  ·  index.js 589.52 kB
 ```
 
