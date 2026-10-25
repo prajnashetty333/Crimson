@@ -172,6 +172,21 @@ MEDICAL_KNOWLEDGE_BASE = [
             "(3) Severe abdominal pain with a positive or unknown pregnancy status (ruling out life-threatening ectopic pregnancy); "
             "(4) Severe mental health crisis or suicidal thoughts (call/text 988 in the US/Canada or local emergency helplines immediately)."
         )
+    },
+    {
+        "id": "medlineplus_general_symptoms",
+        "title": "Clinical Guidance: Headaches, Hydration, and Common Physical Symptoms",
+        "organization": "MedlinePlus / National Library of Medicine (NIH) & NHS UK",
+        "publication_date": "2024",
+        "url": "https://medlineplus.gov/headache.html",
+        "evidence_level": "Clinical Practice Overview (High Certainty)",
+        "topics": ["headache", "migraine", "pain", "fatigue", "tired", "hydration", "rest", "cramps"],
+        "keywords": ["headache", "migrain", "cramp", "nausea", "dizzi", "pain", "hydrat", "rest", "sleep", "water"],
+        "summary": (
+            "Headaches and mild somatic discomfort often respond to rest in a dark, quiet space, adequate hydration, and stress reduction. "
+            "However, sudden, unusually severe, or escalating headaches ('thunderclap' headache), or those accompanied by neurological changes, "
+            "fever, or vision disturbances, require prompt medical assessment by a physician."
+        )
     }
 ]
 
@@ -193,45 +208,6 @@ EMERGENCY_TRIGGERS = [
     r"ectopic"
 ]
 
-MEDICAL_QUESTION_TRIGGERS = [
-    r"pcos",
-    r"pcod",
-    r"period",
-    r"cycle",
-    r"menstru",
-    r"ovulat",
-    r"pregnan",
-    r"fertil",
-    r"hormon",
-    r"insulin",
-    r"metformin",
-    r"inositol",
-    r"supplement",
-    r"cinnamon",
-    r"berberin",
-    r"spearmint",
-    r"seed cycl",
-    r"diet",
-    r"nutrition",
-    r"cure",
-    r"bleed",
-    r"acne",
-    r"hirsut",
-    r"hair",
-    r"weight",
-    r"cyst",
-    r"ultrasound",
-    r"blood test",
-    r"symptom",
-    r"diagnos",
-    r"doctor",
-    r"medicine",
-    r"pill",
-    r"progesteron",
-    r"estrogen",
-    r"testosterone"
-]
-
 MYTH_PATTERNS = [
     (r"cure.*pcos|pcos.*cure", "PCOS is a chronic metabolic and endocrine condition; while symptoms can be effectively managed with evidence-based lifestyle and medical therapies, there is no proven scientific cure."),
     (r"cinnamon.*(cure|fix|treat|reverse)", "Cinnamon has not been clinically proven to cure PCOS or reverse hormonal imbalance; preliminary small studies on glucose markers show very low certainty."),
@@ -240,17 +216,50 @@ MYTH_PATTERNS = [
     (r"every.*(pcos|woman|person).*(insulin|diabet|infertil|fat|overweight|irregular)", "PCOS is clinically heterogeneous: not every person with PCOS has insulin resistance, irregular cycles, or weight changes. Diagnostic and metabolic presentations vary widely.")
 ]
 
+# Everyday conversation patterns — prioritized to ensure natural friend chats remain free of unsolicited medical advice
+CASUAL_PATTERNS = [
+    r"^(hi|hello|hey|good morning|good evening|good afternoon|howdy|sup|yo|hiya)[\s!.,?]*$",
+    r"\bhow are you\b",
+    r"\bhow(\'s| is) (your day|everything|it going|life)\b",
+    r"\b(i(\'m| am) bored|bored today|nothing to do)\b",
+    r"\b(suggest|recommend).*(movie|film|series|show|book|song|music|podcast|game)\b",
+    r"\b(what|which) (movie|show|series|book|song) (should i|to) (watch|read|listen)\b",
+    r"\b(tell me|know any|say a).*(joke|funny)\b",
+    r"\b(relaxing|herbal|evening|bedtime|cup of) tea\b",
+    r"\b(exam|exams|finals|test|studying|homework|assignment|deadline|class|college|school|university|campus|boss|job|interview|traffic).*(stress|stressed|anxious|tired|rough|hard|exhaust|burnout|overwhelm)",
+    r"\b(stress|stressed|anxious|tired|rough|hard|exhaust|burnout|overwhelm).*(exam|exams|finals|test|studying|homework|assignment|deadline|class|college|school|university|campus|boss|job|interview|traffic)",
+    r"\b(rough|hard|long|busy|tiring|productive|crazy) day\b",
+    r"\bhad a (great|good|fun|nice) (day|weekend|time|dinner|lunch|trip)\b",
+]
 
-def classify_user_intent(user_text: str) -> Dict[str, Any]:
+# Explicit, genuine health & clinical question patterns
+EXPLICIT_MEDICAL_PATTERNS = [
+    r"\b(pcos|pcod|polycystic)\b",
+    r"\b(periods?|menstruat\w*|menarche|amenorrhea|oligomenorrhea|dysmenorrhea|cramp|cramps|luteal|follicular|ovulat\w*)\b",
+    r"\b(endometri\w*|hyperandrogenism|hirsutism|alopecia)\b",
+    r"\b(insulin|glucose|hba1c|ogtt|metformin|inositol|myo-inositol|spironolactone|letrozole|clomid|clomiphene|provera)\b",
+    r"\b(estrogen|progesterone|testosterone|androgen\w*|cortisol|anti-mullerian|amh)\b",
+    r"\b(ovary|ovaries|ovarian|uterus|uterine|fallopian|cysts?|follicle|follicles)\b",
+    r"\b(pregnant|pregnancy|trying to conceive|ttc|infertility|subfertility|birth control|contracept\w*|iud)\b",
+    r"\b(gynecologist|endocrinologist|obgyn|dermatologist)\b",
+    r"\b(headache|migraines?|pelvic pain|spotting|heavy bleeding|cystic acne|facial hair)\b",
+    r"\b(blood test|ultrasound|scan|lab results|diagnos\w*|symptoms?)\b",
+    r"\b(cure|treatment|medicine|supplement|diet|nutrition|supplements|cinnamon|berberine|spearmint|seed cycl\w*)\b",
+    r"\b(body is broken|anxious and moody before my cycle)\b",
+]
+
+def classify_user_intent(user_text: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
     """
     Classifies the user input into:
     - category: 'emergency' | 'medical' | 'general_chat'
     - detected_red_flags: list of matched emergency triggers
     - detected_myths: list of false medical claim patterns detected
+    Context-aware: Distinguishes everyday conversation, college/exam stress, boredom,
+    and casual recommendations from genuine health, PCOS, or symptom questions.
     """
     text_lower = user_text.lower().strip()
     
-    # 1. Check emergency red flags
+    # 1. Check emergency red flags (critical safety overrides)
     detected_red_flags = []
     for pattern in EMERGENCY_TRIGGERS:
         if re.search(pattern, text_lower):
@@ -271,10 +280,7 @@ def classify_user_intent(user_text: str) -> Dict[str, Any]:
         if re.search(pattern, text_lower):
             detected_myths.append(note)
             
-    # 3. Check general medical triggers
-    is_medical = any(re.search(pat, text_lower) for pat in MEDICAL_QUESTION_TRIGGERS)
-    
-    if is_medical:
+    if detected_myths:
         return {
             "category": "medical",
             "urgency": "routine",
@@ -282,7 +288,31 @@ def classify_user_intent(user_text: str) -> Dict[str, Any]:
             "detected_red_flags": [],
             "detected_myths": detected_myths
         }
-        
+
+    # 3. Check explicit medical patterns vs casual everyday context
+    is_explicit_med = any(re.search(pat, text_lower) for pat in EXPLICIT_MEDICAL_PATTERNS)
+    is_casual = any(re.search(pat, text_lower) for pat in CASUAL_PATTERNS)
+
+    # Casual everyday conversation takes precedence when no explicit medical conditions or symptoms are raised
+    if is_casual and not is_explicit_med:
+        return {
+            "category": "general_chat",
+            "urgency": "routine",
+            "needs_professional_care": False,
+            "detected_red_flags": [],
+            "detected_myths": []
+        }
+
+    if is_explicit_med:
+        return {
+            "category": "medical",
+            "urgency": "routine",
+            "needs_professional_care": False,
+            "detected_red_flags": [],
+            "detected_myths": []
+        }
+
+    # Default to general_chat for natural conversational flow
     return {
         "category": "general_chat",
         "urgency": "routine",
@@ -300,8 +330,13 @@ def tokenize(text: str) -> List[str]:
 def retrieve_relevant_medical_knowledge(query: str, max_results: int = 2) -> List[Dict[str, Any]]:
     """
     Retrieves the most relevant medical evidence documents using keyword and topic scoring.
-    Returns structured list of verified sources with titles, organizations, and summaries.
+    Only returns sources when the query warrants genuine clinical evidence; returns empty list
+    for ordinary casual conversations.
     """
+    intent = classify_user_intent(query)
+    if intent["category"] == "general_chat":
+        return []
+
     query_tokens = set(tokenize(query))
     query_lower = query.lower()
     
@@ -328,6 +363,10 @@ def retrieve_relevant_medical_knowledge(query: str, max_results: int = 2) -> Lis
         # Boost emergency document if emergency keywords are present
         if doc["id"] == "emergency_red_flags" and any(re.search(p, query_lower) for p in EMERGENCY_TRIGGERS):
             score += 20.0
+
+        # Boost general headache/symptom doc if headache mentioned
+        if doc["id"] == "medlineplus_general_symptoms" and ("headache" in query_lower or "migrain" in query_lower):
+            score += 15.0
             
         if score > 1.0:
             scores.append((score, doc))
@@ -337,9 +376,8 @@ def retrieve_relevant_medical_knowledge(query: str, max_results: int = 2) -> Lis
     
     top_docs = [doc for _, doc in scores[:max_results]]
     
-    # If no specific match was found but query is generally medical, return baseline guideline
-    if not top_docs and any(re.search(pat, query_lower) for pat in MEDICAL_QUESTION_TRIGGERS):
-        top_docs = [MEDICAL_KNOWLEDGE_BASE[0]] # 2023 International Guideline Overview
+    if not top_docs and intent["category"] in ("medical", "emergency"):
+        top_docs = [MEDICAL_KNOWLEDGE_BASE[0]]
         
     return top_docs
 
