@@ -150,7 +150,7 @@ def token_required(f):
             
         # Verify user still exists in database
         users = execute_query(
-            "SELECT user_id, username, email, age, lifestyle, has_pcos, role FROM users WHERE user_id = :uid",
+            "SELECT user_id, username, email, age, lifestyle, has_pcos, pcos_diagnosis_status, role FROM users WHERE user_id = :uid",
             {"uid": user_id}
         )
         if not users:
@@ -158,6 +158,7 @@ def token_required(f):
             
         current_user = users[0]
         current_user['has_pcos'] = bool(current_user['has_pcos'])
+        current_user['pcos_diagnosis_status'] = current_user.get('pcos_diagnosis_status') or 'prefer_not_to_say'
         current_user['role'] = current_user.get('role') or 'member'
         return f(current_user=current_user, *args, **kwargs)
     return decorated
@@ -226,6 +227,9 @@ def register():
         lifestyle = 'Moderate'
         
     has_pcos = bool(data.get('has_pcos', False))
+    raw_diag = str(data.get('pcos_diagnosis_status', 'prefer_not_to_say')).strip().lower()
+    valid_diag = {'diagnosed', 'suspected', 'prefer_not_to_say'}
+    pcos_diagnosis_status = raw_diag if raw_diag in valid_diag else 'prefer_not_to_say'
     
     # Check if user already exists
     existing = execute_query("SELECT user_id FROM users WHERE email = :email", {"email": email})
@@ -236,8 +240,8 @@ def register():
     try:
         execute_write(
             """
-            INSERT INTO users (user_id, username, email, password, age, lifestyle, has_pcos)
-            VALUES (:user_id, :username, :email, :password, :age, :lifestyle, :has_pcos)
+            INSERT INTO users (user_id, username, email, password, age, lifestyle, has_pcos, pcos_diagnosis_status)
+            VALUES (:user_id, :username, :email, :password, :age, :lifestyle, :has_pcos, :pcos_diagnosis_status)
             """,
             {
                 "user_id": user_id,
@@ -246,7 +250,8 @@ def register():
                 "password": hashed_password,
                 "age": age,
                 "lifestyle": lifestyle,
-                "has_pcos": has_pcos
+                "has_pcos": has_pcos,
+                "pcos_diagnosis_status": pcos_diagnosis_status
             }
         )
         token = generate_auth_token(user_id)
@@ -259,7 +264,9 @@ def register():
                 "email": email,
                 "age": age,
                 "lifestyle": lifestyle,
-                "has_pcos": has_pcos
+                "has_pcos": has_pcos,
+                "pcos_diagnosis_status": pcos_diagnosis_status,
+                "role": "member"
             }
         }), 201
     except Exception as e:
@@ -295,6 +302,7 @@ def login():
         return jsonify({"error": "Invalid email or password"}), 401
         
     token = generate_auth_token(user_data['user_id'])
+    is_demo_user = bool("demo" in str(user_data['email']).lower() or "demo" in str(user_data['username']).lower())
     return jsonify({
         "message": "Login successful",
         "token": token,
@@ -304,7 +312,10 @@ def login():
             "email": user_data['email'],
             "age": user_data['age'],
             "lifestyle": user_data['lifestyle'],
-            "has_pcos": bool(user_data['has_pcos'])
+            "has_pcos": bool(user_data['has_pcos']),
+            "pcos_diagnosis_status": user_data.get('pcos_diagnosis_status') or 'prefer_not_to_say',
+            "role": user_data.get('role', 'member'),
+            "is_demo": is_demo_user
         }
     }), 200
 
@@ -312,10 +323,25 @@ def login():
 def demo_login():
     """
     Safely authenticates a dedicated synthetic demo account.
-    Eliminates public admin endpoint reliance and arbitrary bypasses.
+    Prioritizes Maya Demo (maya.demo@example.com), optionally allows specifying
+    a target demo email in the request JSON (e.g. jordan.gap@example.com),
+    and falls back to legacy demo@ovacare.app if needed.
     """
-    demo_email = "demo@ovacare.app"
-    user = execute_query("SELECT * FROM users WHERE email = :email", {"email": demo_email})
+    req_json = request.get_json(silent=True) or {}
+    requested_email = req_json.get('email')
+
+    user = None
+    if requested_email and 'demo' in str(requested_email).lower():
+        user = execute_query("SELECT * FROM users WHERE email = :email", {"email": str(requested_email).strip().lower()})
+
+    if not user:
+        # Prioritize primary Maya Demo account
+        user = execute_query("SELECT * FROM users WHERE email = :email", {"email": "maya.demo@example.com"})
+
+    if not user:
+        # Fallback to legacy demo account
+        user = execute_query("SELECT * FROM users WHERE email = :email", {"email": "demo@ovacare.app"})
+
     if not user:
         return jsonify({"error": "Demo account is not configured in the database"}), 500
         
@@ -330,7 +356,10 @@ def demo_login():
             "email": user_data['email'],
             "age": user_data['age'],
             "lifestyle": user_data['lifestyle'],
-            "has_pcos": bool(user_data['has_pcos'])
+            "has_pcos": bool(user_data['has_pcos']),
+            "pcos_diagnosis_status": user_data.get('pcos_diagnosis_status') or 'prefer_not_to_say',
+            "role": user_data.get('role', 'member'),
+            "is_demo": True
         }
     }), 200
 
@@ -359,7 +388,7 @@ def update_profile(current_user, user_id):
     if data is None or not isinstance(data, dict):
         return jsonify({"error": "Invalid request body"}), 400
         
-    allowed_fields = {'age', 'lifestyle', 'has_pcos'}
+    allowed_fields = {'age', 'lifestyle', 'has_pcos', 'pcos_diagnosis_status'}
     disallowed = set(data.keys()) - allowed_fields
     if disallowed:
         return jsonify({"error": f"Cannot modify restricted field(s): {', '.join(sorted(disallowed))}"}), 400
@@ -396,6 +425,18 @@ def update_profile(current_user, user_id):
             return jsonify({"error": "has_pcos must be a boolean (true/false)"}), 400
         updates['has_pcos'] = ":has_pcos"
         params['has_pcos'] = has_pcos_val
+
+    if 'pcos_diagnosis_status' in data:
+        raw_status = data.get('pcos_diagnosis_status')
+        valid_statuses = {'diagnosed', 'suspected', 'prefer_not_to_say'}
+        if raw_status is None or str(raw_status).strip() == '':
+            pcos_status = 'prefer_not_to_say'
+        else:
+            pcos_status = str(raw_status).strip().lower()
+            if pcos_status not in valid_statuses:
+                return jsonify({"error": f"pcos_diagnosis_status must be one of: {', '.join(sorted(valid_statuses))}"}), 400
+        updates['pcos_diagnosis_status'] = ":pcos_diag_status"
+        params['pcos_diag_status'] = pcos_status
         
     if not updates:
         return jsonify({"message": "No valid fields provided to update", "user": current_user}), 200
@@ -406,10 +447,12 @@ def update_profile(current_user, user_id):
     try:
         execute_write(sql, params)
         updated = execute_query(
-            "SELECT user_id, username, email, age, lifestyle, has_pcos FROM users WHERE user_id = :user_id",
+            "SELECT user_id, username, email, age, lifestyle, has_pcos, pcos_diagnosis_status, role FROM users WHERE user_id = :user_id",
             {"user_id": user_id}
         )[0]
         updated['has_pcos'] = bool(updated['has_pcos'])
+        updated['pcos_diagnosis_status'] = updated.get('pcos_diagnosis_status') or 'prefer_not_to_say'
+        updated['role'] = updated.get('role', 'member')
         return jsonify({"message": "Profile updated successfully", "user": updated}), 200
     except Exception as e:
         return jsonify({"error": "Database error while updating profile"}), 500
@@ -902,29 +945,52 @@ def get_analytics(current_user):
     }), 200
 
 # ==========================================
-# 7b. Clinical Reports & Doctor Visit Summary API
+# 7b. Unified My Health Report & Clinical Summary API
 # ==========================================
 
+@app.route('/api/reports/health-summary', methods=['GET'])
 @app.route('/api/reports/doctor-summary', methods=['GET'])
 @token_required
-def get_doctor_summary(current_user):
+def get_health_report(current_user):
     """
-    Generates a structured clinical visit summary strictly segregating:
+    Generates the unified My Health Report strictly segregating:
     1. Recorded Facts (patient-confirmed cycle dates, bleeding lengths, flow logs)
     2. Statistical Estimates (average cycle length, prediction intervals, irregularity)
     3. User-Reported Symptoms (subjective comfort, sleep hours, mood, notes)
-    Supports ?format=json (default) and ?format=html (printable clinical report).
+    Supports date range filtering via ?start_date=YYYY-MM-DD and ?end_date=YYYY-MM-DD.
+    Supports ?format=json (default) and ?format=html (printable report).
     """
     user_id = current_user['user_id']
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    fmt = request.args.get('format', 'json').lower()
+
+    # Validate date formats if provided
+    if start_date:
+        try:
+            datetime.strptime(start_date, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Invalid start_date format. Expected YYYY-MM-DD"}), 400
+
+    if end_date:
+        try:
+            datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Invalid end_date format. Expected YYYY-MM-DD"}), 400
+
+    if start_date and end_date and start_date > end_date:
+        return jsonify({"error": "start_date cannot be after end_date"}), 400
+
     try:
-        summary_data = get_user_doctor_summary(user_id)
-        fmt = request.args.get('format', 'json').lower()
+        summary_data = get_user_doctor_summary(user_id, start_date=start_date, end_date=end_date)
         if fmt in ('html', 'print'):
             html_content = render_doctor_summary_html(summary_data)
             return Response(html_content, mimetype='text/html; charset=utf-8')
         return jsonify(summary_data), 200
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
     except Exception as e:
-        return jsonify({"error": "Failed to generate doctor summary"}), 500
+        return jsonify({"error": "Failed to generate health report"}), 500
 
 # ==========================================
 # 8. Admin Dashboard API (Secured & Anonymized)

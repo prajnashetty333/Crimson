@@ -311,6 +311,86 @@ class TestDoctorSummaryAPI(unittest.TestCase):
         self.assertEqual(data["category_1_recorded_facts"]["total_cycles_recorded"], 0)
         self.assertEqual(data["category_3_user_reported_symptoms"]["total_days_logged"], 0)
 
+    # ------------------------------------------------------------------
+    # Unified My Health Report endpoint (/api/reports/health-summary)
+    # ------------------------------------------------------------------
+
+    def test_health_summary_unauthenticated_returns_401(self):
+        res = self.client.get('/api/reports/health-summary')
+        self.assertEqual(res.status_code, 401)
+
+    def test_health_summary_authenticated_returns_unified_sections(self):
+        res = self.client.get(
+            '/api/reports/health-summary',
+            headers={'Authorization': f'Bearer {self.token_a}'}
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data.get("report_title"), "My Health Report")
+        self.assertIn("report_overview", data)
+        self.assertIn("data_sufficiency", data["report_overview"])
+        self.assertIn("reporting_period", data)
+        self.assertIn("category_1_recorded_facts", data)
+        self.assertIn("category_2_statistical_estimates", data)
+        self.assertIn("category_3_user_reported_symptoms", data)
+        self.assertIn("important_information", data)
+
+    def test_health_summary_date_range_filtering(self):
+        # User A has cycles on '2026-06-01' and '2026-07-01'
+        # Filtering start_date=2026-06-15 should only return the July cycle
+        res = self.client.get(
+            '/api/reports/health-summary?start_date=2026-06-15&end_date=2026-07-15',
+            headers={'Authorization': f'Bearer {self.token_a}'}
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        cycles = data["category_1_recorded_facts"]["cycles"]
+        self.assertEqual(len(cycles), 1)
+        self.assertEqual(cycles[0]["start_date"], "2026-07-01")
+        self.assertEqual(data["reporting_period"]["label"], "2026-06-15 to 2026-07-15")
+
+    def test_health_summary_out_of_range_empty(self):
+        # Filtering for dates with no records
+        res = self.client.get(
+            '/api/reports/health-summary?start_date=2025-01-01&end_date=2025-02-01',
+            headers={'Authorization': f'Bearer {self.token_a}'}
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["category_1_recorded_facts"]["total_cycles_recorded"], 0)
+        self.assertEqual(data["category_3_user_reported_symptoms"]["total_days_logged"], 0)
+        self.assertFalse(data["report_overview"]["data_sufficiency"]["is_sufficient"])
+
+    def test_health_summary_invalid_date_format_returns_400(self):
+        res = self.client.get(
+            '/api/reports/health-summary?start_date=not-a-date',
+            headers={'Authorization': f'Bearer {self.token_a}'}
+        )
+        self.assertEqual(res.status_code, 400)
+        data = res.get_json()
+        self.assertIn("error", data)
+
+    def test_health_summary_start_after_end_returns_400(self):
+        res = self.client.get(
+            '/api/reports/health-summary?start_date=2026-08-01&end_date=2026-07-01',
+            headers={'Authorization': f'Bearer {self.token_a}'}
+        )
+        self.assertEqual(res.status_code, 400)
+        data = res.get_json()
+        self.assertIn("error", data)
+
+    def test_health_summary_html_format(self):
+        res = self.client.get(
+            '/api/reports/health-summary?format=html',
+            headers={'Authorization': f'Bearer {self.token_a}'}
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertIn('text/html', res.content_type)
+        html = res.get_data(as_text=True)
+        self.assertIn("My Health Report", html)
+        self.assertIn("Report Overview", html)
+        self.assertIn("Print / Save as PDF", html)
+
 
 if __name__ == '__main__':
     unittest.main()

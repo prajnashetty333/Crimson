@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     age INT,
     lifestyle VARCHAR(100), -- E.g., 'Sedentary', 'Active', 'Moderate'
     has_pcos BOOLEAN DEFAULT FALSE,
+    pcos_diagnosis_status VARCHAR(50) DEFAULT 'prefer_not_to_say',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

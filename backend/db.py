@@ -7,6 +7,7 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROTECTED_PROD_DB_PATH = os.path.abspath(os.path.join(BASE_DIR, "ovacare.db"))
 DEFAULT_TEST_DB_PATH = os.path.abspath(os.path.join(BASE_DIR, "ovacare_test.db"))
+DEFAULT_DEMO_DB_PATH = os.path.abspath(os.path.join(BASE_DIR, "ovacare_demo.db"))
 
 
 def is_test_mode():
@@ -18,10 +19,21 @@ def is_test_mode():
     return val in ("true", "1", "yes") or bool(os.getenv("TEST_DATABASE_PATH") or os.getenv("OVACARE_TEST_DB"))
 
 
+def is_demo_mode():
+    """
+    Returns True when demo mode is explicitly activated via
+    OVACARE_DEMO_MODE or an explicit demo database environment variable.
+    """
+    val = os.getenv("OVACARE_DEMO_MODE", "").strip().lower()
+    return val in ("true", "1", "yes") or bool(os.getenv("DEMO_DATABASE_PATH") or os.getenv("OVACARE_DEMO_DB"))
+
+
 def resolve_database_url():
     """
     Resolves the active database URL.
     In test mode: uses an isolated test SQLite database, strictly verifying it is NOT
+    the protected production database.
+    In demo mode: uses an isolated demo SQLite database, strictly verifying it is NOT
     the protected production database.
     In development/production mode: preserves MySQL configuration if provided,
     otherwise falls back to backend/ovacare.db.
@@ -39,6 +51,20 @@ def resolve_database_url():
                 f"protected production database: {PROTECTED_PROD_DB_PATH}"
             )
         return f"sqlite:///{test_path}"
+
+    if is_demo_mode():
+        demo_path = os.getenv("DEMO_DATABASE_PATH") or os.getenv("OVACARE_DEMO_DB")
+        if not demo_path:
+            demo_path = DEFAULT_DEMO_DB_PATH
+        else:
+            demo_path = os.path.abspath(demo_path)
+
+        if os.path.abspath(demo_path) == PROTECTED_PROD_DB_PATH:
+            raise RuntimeError(
+                f"CRITICAL DATABASE SAFETY VIOLATION: Demo database path cannot be the "
+                f"protected production database: {PROTECTED_PROD_DB_PATH}"
+            )
+        return f"sqlite:///{demo_path}"
 
     MYSQL_USER = os.getenv("MYSQL_USER", "")
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
@@ -103,6 +129,37 @@ def init_test_database(test_db_path=None, init_schema=True):
     return target_abs
 
 
+def init_demo_database(demo_db_path=None, init_schema=True):
+    """
+    Safely switches the database engine to an isolated SQLite demo database.
+    Ensures the target is NOT the protected production database, initializes
+    the demo schema, and updates module-level engine and DATABASE_URL.
+    """
+    global engine, DATABASE_URL
+
+    target = demo_db_path or os.getenv("DEMO_DATABASE_PATH") or os.getenv("OVACARE_DEMO_DB") or DEFAULT_DEMO_DB_PATH
+    target_abs = os.path.abspath(target)
+
+    if target_abs == PROTECTED_PROD_DB_PATH:
+        raise RuntimeError(
+            f"CRITICAL DATABASE SAFETY VIOLATION: Demo database path cannot be the "
+            f"protected production database: {PROTECTED_PROD_DB_PATH}"
+        )
+
+    os.environ["OVACARE_DEMO_MODE"] = "true"
+    os.environ["DEMO_DATABASE_PATH"] = target_abs
+    DATABASE_URL = f"sqlite:///{target_abs}"
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False}
+    )
+
+    if init_schema:
+        _init_test_schema(engine)
+
+    return target_abs
+
+
 def _init_test_schema(target_engine):
     """Initializes standard application tables and lookup seeds in the test database."""
     ddl = """
@@ -114,6 +171,7 @@ def _init_test_schema(target_engine):
         age INT,
         lifestyle VARCHAR(100),
         has_pcos BOOLEAN DEFAULT FALSE,
+        pcos_diagnosis_status VARCHAR(50) DEFAULT 'prefer_not_to_say',
         role VARCHAR(50) DEFAULT 'member',
         is_community_banned BOOLEAN DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -321,6 +379,15 @@ def _init_test_schema(target_engine):
     raw_conn = target_engine.raw_connection()
     try:
         raw_conn.executescript(ddl)
+        cursor = raw_conn.cursor()
+        cursor.execute("PRAGMA table_info(users)")
+        cols = [r[1] for r in cursor.fetchall()]
+        if "role" not in cols:
+            cursor.execute("ALTER TABLE users ADD COLUMN role VARCHAR(50) DEFAULT 'member'")
+        if "is_community_banned" not in cols:
+            cursor.execute("ALTER TABLE users ADD COLUMN is_community_banned BOOLEAN DEFAULT 0")
+        if "pcos_diagnosis_status" not in cols:
+            cursor.execute("ALTER TABLE users ADD COLUMN pcos_diagnosis_status VARCHAR(50) DEFAULT 'prefer_not_to_say'")
         raw_conn.commit()
     finally:
         raw_conn.close()
@@ -359,12 +426,12 @@ def execute_write(sql_string, params=None):
     """
     Executes a write query (INSERT, UPDATE, DELETE) inside a transaction and commits.
     Enforces a strict safety guard: blocks any write to the protected production database
-    whenever test mode is active.
+    whenever test mode or demo mode is active.
     """
-    if is_test_mode() and is_active_db_protected():
+    if (is_test_mode() or is_demo_mode()) and is_active_db_protected():
         raise RuntimeError(
             f"CRITICAL DATABASE SAFETY VIOLATION: Attempted to execute write query on "
-            f"protected production database ({PROTECTED_PROD_DB_PATH}) during test mode!"
+            f"protected production database ({PROTECTED_PROD_DB_PATH}) during isolated test/demo mode!"
         )
 
     if params is None:

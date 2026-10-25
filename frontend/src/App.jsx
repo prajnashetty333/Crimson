@@ -75,7 +75,7 @@ function App() {
     return localStorage.getItem('ovacare_token') || null;
   });
   const [activeTab, setActiveTab] = useState('dashboard');
-  
+
   // Data States
   const [cycles, setCycles] = useState([]);
   const [prediction, setPrediction] = useState(null);
@@ -83,12 +83,12 @@ function App() {
   const [reminders, setReminders] = useState([]);
   const [logs, setLogs] = useState([]);
   const [adminStats, setAdminStats] = useState(null);
-  
+
   // UI Control States
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
-  
+
   // Login/Registration Form States
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [email, setEmail] = useState('');
@@ -97,6 +97,7 @@ function App() {
   const [age, setAge] = useState('');
   const [lifestyle, setLifestyle] = useState('Moderate');
   const [hasPcos, setHasPcos] = useState(false);
+  const [pcosDiagnosisStatus, setPcosDiagnosisStatus] = useState('prefer_not_to_say');
 
   // Logging Form States
   const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
@@ -123,15 +124,18 @@ function App() {
   const [clarifyingLoading, setClarifyingLoading] = useState(false);
   const [showExplainableDetails, setShowExplainableDetails] = useState(false);
 
-  // Doctor Summary Modal States
-  const [showDoctorModal, setShowDoctorModal] = useState(false);
-  const [doctorSummaryData, setDoctorSummaryData] = useState(null);
-  const [doctorSummaryLoading, setDoctorSummaryLoading] = useState(false);
+  // Unified My Health Report States
+  const [reportStartDate, setReportStartDate] = useState('');
+  const [reportEndDate, setReportEndDate] = useState('');
+  const [reportPreset, setReportPreset] = useState('all'); // 'all' | '3m' | '6m' | '1y' | 'custom'
+  const [reportData, setReportData] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState(null);
 
   // Reminder Form States
   const [reminderType, setReminderType] = useState('Hydration');
   const [reminderDate, setReminderDate] = useState(new Date().toISOString().split('T')[0]);
-  
+
   // Calendar Navigation State
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
@@ -202,21 +206,21 @@ function App() {
         const data = await cyclesRes.json();
         setCycles(data);
       }
-      
+
       // 2. Fetch Prediction
       const predRes = await authFetch(`${API_BASE}/predictions`);
       if (predRes.ok) {
         const data = await predRes.json();
         setPrediction(data);
       }
-      
+
       // 3. Fetch Analytics
       const analyticsRes = await authFetch(`${API_BASE}/analytics`);
       if (analyticsRes.ok) {
         const data = await analyticsRes.json();
         setAnalytics(data);
       }
-      
+
       // 4. Fetch Reminders
       const remindersRes = await authFetch(`${API_BASE}/reminders`);
       if (remindersRes.ok) {
@@ -240,16 +244,23 @@ function App() {
     }
   };
 
-  // Fetch Admin Stats
+  // Fetch Admin Stats (Admin role guarded)
   const fetchAdminStats = async () => {
+    if (user?.role !== 'admin') {
+      setAdminStats(null);
+      return;
+    }
     try {
       const statsRes = await authFetch(`${API_BASE}/admin/stats`);
       if (statsRes.ok) {
         const data = await statsRes.json();
         setAdminStats(data);
+      } else {
+        setAdminStats(null);
       }
     } catch (err) {
       console.error("Error loading admin stats:", err);
+      setAdminStats(null);
     }
   };
 
@@ -258,7 +269,15 @@ function App() {
     if (user && (token || localStorage.getItem('ovacare_token'))) {
       fetchUserData();
       if (activeTab === 'admin') {
-        fetchAdminStats();
+        if (user.role === 'admin') {
+          fetchAdminStats();
+        } else {
+          setActiveTab('dashboard');
+          triggerToast("The Admin Database Dashboard is restricted to administrator accounts.", true);
+        }
+      }
+      if (activeTab === 'report' && !reportData && !reportLoading) {
+        fetchHealthReport(reportStartDate, reportEndDate);
       }
     }
   }, [user, token, activeTab]);
@@ -305,7 +324,8 @@ function App() {
           password,
           age: age ? parseInt(age) : null,
           lifestyle,
-          has_pcos: hasPcos
+          has_pcos: hasPcos,
+          pcos_diagnosis_status: hasPcos ? pcosDiagnosisStatus : 'prefer_not_to_say'
         })
       });
       const data = await res.json();
@@ -326,12 +346,14 @@ function App() {
   };
 
   // Dedicated Demo Mode Handler (Task A)
-  const handleDemoMode = async () => {
+  const handleDemoMode = async (targetEmail = null) => {
     setLoading(true);
     try {
+      const emailToUse = (typeof targetEmail === 'string' && targetEmail) ? targetEmail : 'maya.demo@example.com';
       const res = await fetch(`${API_BASE}/auth/demo`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailToUse })
       });
       const data = await res.json();
       if (res.ok) {
@@ -440,57 +462,105 @@ function App() {
     }, 150);
   };
 
-  // Open & Fetch Doctor-Visit Summary
-  const handleOpenDoctorSummary = async () => {
-    setShowDoctorModal(true);
-    setDoctorSummaryLoading(true);
+  // Fetch Unified My Health Report
+  const fetchHealthReport = async (sDate = reportStartDate, eDate = reportEndDate) => {
+    setReportLoading(true);
+    setReportError(null);
     try {
-      const res = await authFetch(`${API_BASE}/reports/doctor-summary`);
+      const params = new URLSearchParams();
+      if (sDate) params.append('start_date', sDate);
+      if (eDate) params.append('end_date', eDate);
+      const queryStr = params.toString() ? `?${params.toString()}` : '';
+      const res = await authFetch(`${API_BASE}/reports/health-summary${queryStr}`);
       if (res.ok) {
         const data = await res.json();
-        setDoctorSummaryData(data);
+        setReportData(data);
       } else {
-        triggerToast("Failed to load doctor visit summary.", true);
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.error || "Failed to load My Health Report.";
+        setReportError(msg);
+        triggerToast(msg, true);
       }
     } catch (err) {
-      triggerToast("Error connecting to server for summary.", true);
+      setReportError("Error connecting to server for health report.");
+      triggerToast("Error connecting to server for report.", true);
     } finally {
-      setDoctorSummaryLoading(false);
+      setReportLoading(false);
     }
   };
 
-  // Print or Save PDF Clinical Summary
-  const handlePrintDoctorSummary = async () => {
+  // Preset Date Range Selection Handler
+  const handleApplyReportPreset = (presetKey) => {
+    setReportPreset(presetKey);
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    if (presetKey === 'all') {
+      setReportStartDate('');
+      setReportEndDate('');
+      fetchHealthReport('', '');
+    } else if (presetKey === '3m') {
+      const past = new Date();
+      past.setDate(past.getDate() - 90);
+      const pastStr = past.toISOString().split('T')[0];
+      setReportStartDate(pastStr);
+      setReportEndDate(todayStr);
+      fetchHealthReport(pastStr, todayStr);
+    } else if (presetKey === '6m') {
+      const past = new Date();
+      past.setDate(past.getDate() - 180);
+      const pastStr = past.toISOString().split('T')[0];
+      setReportStartDate(pastStr);
+      setReportEndDate(todayStr);
+      fetchHealthReport(pastStr, todayStr);
+    } else if (presetKey === '1y') {
+      const past = new Date();
+      past.setDate(past.getDate() - 365);
+      const pastStr = past.toISOString().split('T')[0];
+      setReportStartDate(pastStr);
+      setReportEndDate(todayStr);
+      fetchHealthReport(pastStr, todayStr);
+    }
+  };
+
+  // Print or Save PDF My Health Report
+  const handlePrintHealthReport = async () => {
     try {
-      const res = await authFetch(`${API_BASE}/reports/doctor-summary?format=html`);
+      const params = new URLSearchParams({ format: 'html' });
+      if (reportStartDate) params.append('start_date', reportStartDate);
+      if (reportEndDate) params.append('end_date', reportEndDate);
+      const res = await authFetch(`${API_BASE}/reports/health-summary?${params.toString()}`);
       if (res.ok) {
         const html = await res.text();
         const printWindow = window.open('', '_blank');
         if (printWindow) {
           printWindow.document.write(html);
           printWindow.document.close();
+          printWindow.focus();
+          setTimeout(() => {
+            try { printWindow.print(); } catch (e) { }
+          }, 350);
         } else {
-          triggerToast("Please allow popups to open the printable report.", true);
+          window.print();
         }
       } else {
-        triggerToast("Failed to generate printable report.", true);
+        window.print();
       }
     } catch (err) {
-      triggerToast("Error opening print report.", true);
+      window.print();
     }
   };
 
-  // Download JSON Clinical Summary
-  const handleDownloadDoctorJson = () => {
-    if (!doctorSummaryData) return;
-    const blob = new Blob([JSON.stringify(doctorSummaryData, null, 2)], { type: 'application/json' });
+  // Download JSON My Health Report
+  const handleDownloadHealthReportJson = () => {
+    if (!reportData) return;
+    const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ovacare_clinical_summary_${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `my_health_report_${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    triggerToast("Doctor summary downloaded as JSON.");
+    triggerToast("My Health Report downloaded as JSON.");
   };
 
   // Add Cycle Handler
@@ -622,7 +692,7 @@ function App() {
     }
   };
 
-  // Update Profile Settings Handler (Task B: PUT /api/users/<user_id>)
+  // Update Profile Settings Handlers (PUT /api/users/<user_id>)
   const handleUpdateProfilePcos = async (pcosVal) => {
     if (!user) return;
     try {
@@ -639,12 +709,38 @@ function App() {
         const updatedUser = { ...user, has_pcos: pcosVal };
         setUser(updatedUser);
         localStorage.setItem('ovacare_user', JSON.stringify(updatedUser));
-        triggerToast(`PCOS tracking settings updated (${pcosVal ? 'Active' : 'Off'}).`);
+        triggerToast(`Tracking preferences updated (${pcosVal ? 'PCOS-Aware Tracking' : 'Standard Tracking'}).`);
       } else {
         triggerToast(data.error || "Failed to update profile settings.", true);
       }
     } catch (e) {
       triggerToast("Network error updating profile settings.", true);
+    }
+  };
+
+  const handleUpdateDiagnosisStatus = async (statusVal) => {
+    if (!user) return;
+    try {
+      const res = await authFetch(`${API_BASE}/users/${user.user_id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          pcos_diagnosis_status: statusVal,
+          has_pcos: user.has_pcos,
+          age: user.age,
+          lifestyle: user.lifestyle
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const updatedUser = { ...user, pcos_diagnosis_status: statusVal };
+        setUser(updatedUser);
+        localStorage.setItem('ovacare_user', JSON.stringify(updatedUser));
+        triggerToast("Diagnosis status preference updated.");
+      } else {
+        triggerToast(data.error || "Failed to update diagnosis status.", true);
+      }
+    } catch (e) {
+      triggerToast("Network error updating diagnosis status.", true);
     }
   };
 
@@ -816,13 +912,13 @@ function App() {
   const renderCalendarDays = () => {
     const daysInMonth = getDaysInMonth(calendarYear, calendarMonth);
     const firstDay = getFirstDayOfMonth(calendarYear, calendarMonth);
-    
+
     // Map dates to cycle highlights
     const cycleMap = {};
     cycles.forEach(c => {
       const start = new Date(c.start_date);
       const periodLen = c.period_length || 5;
-      
+
       for (let i = 0; i < periodLen; i++) {
         const curDate = new Date(start);
         curDate.setDate(start.getDate() + i);
@@ -850,7 +946,7 @@ function App() {
       const isPeriod = cycleMap[day] === 'period';
       const isPred = cycleMap[day] === 'prediction';
       const isToday = new Date().getDate() === day && new Date().getMonth() === calendarMonth && new Date().getFullYear() === calendarYear;
-      
+
       let cellClass = "w-10 h-10 flex items-center justify-center rounded-full text-sm font-medium transition-all cursor-pointer relative ";
       if (isPeriod) {
         cellClass += "bg-gradient-to-tr from-pink-400 to-rose-300 text-white shadow-sm scale-105 ";
@@ -863,8 +959,8 @@ function App() {
       }
 
       cells.push(
-        <div 
-          key={`day-${day}`} 
+        <div
+          key={`day-${day}`}
           className={cellClass}
           onClick={() => {
             const formattedDate = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -883,7 +979,7 @@ function App() {
   };
 
   const monthNames = [
-    "January", "February", "March", "April", "May", "June", 
+    "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
   ];
 
@@ -921,7 +1017,7 @@ function App() {
                 />
               </div>
             )}
-            
+
             <div>
               <label className="block text-xs font-semibold text-textSecondary uppercase tracking-wider mb-1">Email</label>
               <input
@@ -974,17 +1070,42 @@ function App() {
             )}
 
             {authMode === 'register' && (
-              <div className="flex items-center space-x-2 pt-2">
-                <input
-                  type="checkbox"
-                  id="hasPcosCheck"
-                  checked={hasPcos}
-                  onChange={(e) => setHasPcos(e.target.checked)}
-                  className="rounded text-primary focus:ring-primary h-4 w-4"
-                />
-                <label htmlFor="hasPcosCheck" className="text-xs text-textSecondary select-none">
-                  I track irregular cycle / PCOS patterns
-                </label>
+              <div className="pt-2 space-y-2.5">
+                <div className="flex items-start space-x-2.5">
+                  <input
+                    type="checkbox"
+                    id="hasPcosCheck"
+                    checked={hasPcos}
+                    onChange={(e) => setHasPcos(e.target.checked)}
+                    className="rounded text-primary focus:ring-primary h-4 w-4 mt-0.5"
+                  />
+                  <div>
+                    <label htmlFor="hasPcosCheck" className="text-xs text-textPrimary font-medium select-none cursor-pointer">
+                      Enable PCOS-Aware Tracking
+                    </label>
+                    <p className="text-[11px] text-textSecondary leading-snug mt-0.5">
+                      Personalize your tracking experience for PCOS-related concerns. OvaCare AI can help you record symptoms and understand your cycle history, but it cannot diagnose or rule out PCOS.
+                    </p>
+                  </div>
+                </div>
+
+                {hasPcos && (
+                  <div className="pl-6 pt-1">
+                    <label htmlFor="registerDiagnosisStatus" className="block text-[11px] font-medium text-textSecondary mb-1">
+                      Self-Reported Diagnosis Status (Optional)
+                    </label>
+                    <select
+                      id="registerDiagnosisStatus"
+                      value={pcosDiagnosisStatus}
+                      onChange={(e) => setPcosDiagnosisStatus(e.target.value)}
+                      className="w-full bg-slate-50 border border-purple-200 rounded-xl px-3 py-1.5 text-xs text-textPrimary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="prefer_not_to_say">Prefer not to say</option>
+                      <option value="diagnosed">Diagnosed by a healthcare professional</option>
+                      <option value="suspected">Suspected / exploring</option>
+                    </select>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1005,14 +1126,40 @@ function App() {
             <div className="flex-grow border-t border-purple-200"></div>
           </div>
 
-          <button
-            onClick={handleDemoMode}
-            disabled={loading}
-            className="w-full border-2 border-primary/20 hover:border-primary text-primary py-3 rounded-2xl font-semibold bg-white/50 hover:bg-primary/5 transition text-sm flex items-center justify-center space-x-2"
-          >
-            <Sparkles size={16} className="fill-primary/10" />
-            <span>{loading ? 'Initializing Demo...' : 'Sign in Demo Mode (Seed Data)'}</span>
-          </button>
+          <div className="space-y-2.5">
+            <button
+              type="button"
+              onClick={() => handleDemoMode('maya.demo@example.com')}
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-purple-50 via-white to-purple-50 hover:from-purple-100 hover:to-purple-50 border border-purple-200 hover:border-primary/50 text-textPrimary py-3 px-4 rounded-2xl transition-all duration-200 shadow-sm hover:shadow flex items-center justify-between group text-left"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:bg-primary group-hover:text-white text-primary transition-all shadow-soft">
+                  <Sparkles size={16} className="fill-current" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-primary group-hover:text-primary-dark transition-colors">
+                    {loading ? 'Initializing Demo...' : 'Sign in as Maya Demo'}
+                  </div>
+                  <div className="text-[11px] text-textSecondary font-medium truncate">
+                    6-month synthetic cycle & wellness history
+                  </div>
+                </div>
+              </div>
+              <ArrowRight size={14} className="text-purple-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all flex-shrink-0 ml-2" />
+            </button>
+
+            <div className="text-center pt-0.5">
+              <button
+                type="button"
+                onClick={() => handleDemoMode('jordan.gap@example.com')}
+                className="text-[11px] text-purple-600 hover:text-purple-800 font-medium hover:underline inline-flex items-center gap-1 transition"
+              >
+                <span>Or explore Cycle-Gap Clarification (Jordan Demo)</span>
+                <ArrowRight size={11} className="opacity-70" />
+              </button>
+            </div>
+          </div>
 
           <div className="mt-6 text-center">
             <button
@@ -1059,25 +1206,47 @@ function App() {
           </div>
           <span className="text-lg font-bold text-textPrimary tracking-tight">OvaCare</span>
           {user.has_pcos && (
-            <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-semibold border border-amber-200 flex items-center space-x-0.5">
-              <span>PCOS Mode</span>
+            <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-semibold border border-amber-200 flex items-center space-x-0.5" title="PCOS-Aware Tracking enabled">
+              <span>PCOS-Aware</span>
+            </span>
+          )}
+          {(user.is_demo || (user.email && user.email.toLowerCase().includes('demo')) || (user.username && user.username.toLowerCase().includes('demo'))) && (
+            <span
+              id="demo-account-badge"
+              className="bg-purple-100 text-purple-800 text-[10px] px-2.5 py-0.5 rounded-full font-bold border border-purple-300 flex items-center space-x-1 shadow-sm"
+              title="Dedicated synthetic demo account for demonstration"
+            >
+              <Sparkles size={11} className="text-primary fill-primary/20" />
+              <span>Demo Account — Synthetic Data</span>
             </span>
           )}
         </div>
-        
-        {/* Quick Admin/LogOut Access */}
-        <div className="flex items-center space-x-3">
-          <button 
-            onClick={() => setActiveTab(activeTab === 'admin' ? 'dashboard' : 'admin')} 
-            className={`p-2 rounded-xl text-textSecondary transition ${activeTab === 'admin' ? 'bg-primary text-white shadow-md' : 'glass-panel hover:bg-purple-100'}`}
-            title="System Admin Portal"
+
+        {/* Quick Report/Admin/LogOut Access */}
+        <div className="flex items-center space-x-2.5">
+          <button
+            onClick={() => setActiveTab(activeTab === 'report' ? 'dashboard' : 'report')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition ${activeTab === 'report' ? 'bg-primary text-white shadow-md' : 'glass-panel text-primary hover:bg-purple-100'}`}
+            title="My Health Report"
           >
-            <Users size={16} />
+            <FileText size={14} />
+            <span className="hidden sm:inline">My Health Report</span>
           </button>
-          
-          <button 
-            onClick={handleLogout} 
-            className="p-2 rounded-xl glass-panel text-rose-600 hover:bg-rose-50 transition" 
+
+          {/* Admin portal access removed from normal patient-facing navigation */}
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setActiveTab(activeTab === 'admin' ? 'dashboard' : 'admin')}
+              className={`p-2 rounded-xl text-textSecondary transition ${activeTab === 'admin' ? 'bg-primary text-white shadow-md' : 'glass-panel hover:bg-purple-100'}`}
+              title="System Admin Portal"
+            >
+              <Users size={16} />
+            </button>
+          )}
+
+          <button
+            onClick={handleLogout}
+            className="p-2 rounded-xl glass-panel text-rose-600 hover:bg-rose-50 transition"
             title="Log Out"
           >
             <LogOut size={16} />
@@ -1159,8 +1328,8 @@ function App() {
                         {prediction ? (
                           <>
                             <h3 className="text-2xl sm:text-3xl font-bold text-textPrimary tracking-tight">
-                              {prediction.delayed_days > 0 
-                                ? `${prediction.delayed_days} Days Delayed` 
+                              {prediction.delayed_days > 0
+                                ? `${prediction.delayed_days} Days Delayed`
                                 : new Date(prediction.predicted_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                               }
                             </h3>
@@ -1299,8 +1468,8 @@ function App() {
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-2xl sm:text-3xl font-bold tracking-tight text-textPrimary">
                             {cycles.length > 0 ? (
-                              prediction?.delayed_days > 0 
-                                ? `${prediction.delayed_days} Days Delayed` 
+                              prediction?.delayed_days > 0
+                                ? `${prediction.delayed_days} Days Delayed`
                                 : `Day ${(Math.round(Math.abs(new Date() - new Date(cycles[0].start_date)) / (1000 * 60 * 60 * 24)) % (prediction?.average_cycle_length || 28)) || 1}`
                             ) : 'Not Started'}
                           </span>
@@ -1319,13 +1488,13 @@ function App() {
                           )}
                         </div>
                         <p className="text-xs text-textSecondary mt-1.5">
-                          {prediction?.regularity_message || (user.has_pcos ? 'Tracking optimized for hormonal variance (PCOS).' : 'Cycle tracking following standard parameters.')}
+                          {prediction?.regularity_message || (user.has_pcos ? 'Personalized for cycle variance (PCOS-Aware Tracking).' : 'Cycle tracking following standard parameters.')}
                         </p>
                       </div>
                     </div>
-                    
-                    <button 
-                      onClick={() => setShowCycleModal(true)} 
+
+                    <button
+                      onClick={() => setShowCycleModal(true)}
                       className="w-full mt-4 bg-primary/10 hover:bg-primary text-primary hover:text-white py-2.5 rounded-xl text-xs font-semibold transition"
                     >
                       Log New Cycle Start
@@ -1360,7 +1529,7 @@ function App() {
                               )}
                             </div>
                             <p className="text-[11px] text-textSecondary mt-0.5">
-                              {rhythm.loggedThisWeek} of 7 days logged this week ({rhythm.totalLoggedDays} total entry {rhythm.totalLoggedDays === 1 ? 'day' : 'days'})
+                              {rhythm.loggedThisWeek} of 7 days logged this week
                             </p>
                           </div>
                         </div>
@@ -1374,43 +1543,17 @@ function App() {
                               </span>
                               <div
                                 title={`${d.dayName} (${d.dateStr}): ${d.isLogged ? 'Logged' : 'Not logged'}`}
-                                className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] transition ${
-                                  d.isLogged
+                                className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] transition ${d.isLogged
                                     ? 'bg-primary text-white shadow-xs'
                                     : d.isToday
-                                    ? 'border-2 border-dashed border-primary/50 text-primary bg-primary/5'
-                                    : 'bg-purple-50 text-textLight border border-purple-100'
-                                }`}
+                                      ? 'border-2 border-dashed border-primary/50 text-primary bg-primary/5'
+                                      : 'bg-purple-50 text-textLight border border-purple-100'
+                                  }`}
                               >
                                 {d.isLogged ? <Check size={12} strokeWidth={3} /> : (d.isToday ? '·' : '')}
                               </div>
                             </div>
                           ))}
-                        </div>
-                      </div>
-
-                      {/* Milestone Progress Bar */}
-                      <div className="mt-3 pt-3 border-t border-purple-100/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                        <div className="flex items-center space-x-2">
-                          <Award size={14} className="text-primary flex-shrink-0" />
-                          <span className="text-[11px] font-medium text-textPrimary">
-                            Milestone: <strong className="text-primary">{rhythm.milestone.label}</strong>
-                          </span>
-                          <span className="text-[10px] text-textSecondary">
-                            ({rhythm.totalLoggedDays}/{rhythm.milestone.target} days tracked)
-                          </span>
-                        </div>
-
-                        <div className="flex items-center space-x-2 w-full sm:w-44">
-                          <div className="w-full bg-purple-100 rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="bg-primary h-1.5 rounded-full transition-all duration-500"
-                              style={{ width: `${rhythm.progressPct}%` }}
-                            ></div>
-                          </div>
-                          <span className="text-[10px] font-semibold text-textSecondary whitespace-nowrap">
-                            {rhythm.progressPct}%
-                          </span>
                         </div>
                       </div>
                     </div>
@@ -1530,8 +1673,8 @@ function App() {
                           {logCramps === 'Severe' && logFlow === 'Heavy'
                             ? "You've logged severe cramps and heavy flow. Rest and gentle heat can help soothe tension. If pain or bleeding is unusually sudden, intense, or soaking through pads rapidly, consider reaching out to your healthcare provider."
                             : logCramps === 'Severe'
-                            ? "You've reported severe cramps today. Rest and soothing warmth can offer relief. If pain is sudden, debilitating, or persists, please consult your doctor for personalized evaluation."
-                            : "You've logged heavy menstrual flow. Remember to stay hydrated. If flow is unusually heavy (soaking through pads/tampons every hour), consult a medical professional."}
+                              ? "You've reported severe cramps today. Rest and soothing warmth can offer relief. If pain is sudden, debilitating, or persists, please consult your doctor for personalized evaluation."
+                              : "You've logged heavy menstrual flow. Remember to stay hydrated. If flow is unusually heavy (soaking through pads/tampons every hour), consult a medical professional."}
                         </div>
                       </div>
                     )}
@@ -1616,14 +1759,14 @@ function App() {
                         {monthNames[calendarMonth]} {calendarYear}
                       </h3>
                       <div className="flex space-x-2">
-                        <button 
-                          onClick={handlePrevMonth} 
+                        <button
+                          onClick={handlePrevMonth}
                           className="p-1.5 rounded-xl hover:bg-purple-100 text-textSecondary border border-purple-100 text-sm font-semibold transition"
                         >
                           &lt;
                         </button>
-                        <button 
-                          onClick={handleNextMonth} 
+                        <button
+                          onClick={handleNextMonth}
                           className="p-1.5 rounded-xl hover:bg-purple-100 text-textSecondary border border-purple-100 text-sm font-semibold transition"
                         >
                           &gt;
@@ -1754,8 +1897,8 @@ function App() {
                       )}
                     </div>
 
-                    <button 
-                      onClick={() => setShowCycleModal(true)} 
+                    <button
+                      onClick={() => setShowCycleModal(true)}
                       className="w-full mt-4 bg-primary text-white py-2.5 rounded-2xl text-xs font-semibold shadow-soft hover:shadow-md transition flex items-center justify-center space-x-1"
                     >
                       <Plus size={14} />
@@ -1774,7 +1917,7 @@ function App() {
                 <div className="glass-panel p-5 sm:p-6 rounded-2xl">
                   <h3 className="text-base sm:text-lg font-semibold text-textPrimary mb-1">Wellness Logs History</h3>
                   <p className="text-xs text-textSecondary mb-5">List of recorded symptoms and daily statuses</p>
-                  
+
                   {logs.length === 0 ? (
                     <div className="text-center py-12 text-textLight italic text-xs">
                       No logs recorded yet. Complete the dashboard entry to see it here!
@@ -2141,7 +2284,7 @@ function App() {
                   </ul>
                 </div>
 
-                {/* 5. Doctor-Visit Clinical Export Card */}
+                {/* 5. My Health Report Card */}
                 <div className="glass-panel p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-purple-50 via-white to-pink-50 border border-purple-200/70 shadow-xs">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div className="flex items-start space-x-3.5">
@@ -2150,26 +2293,29 @@ function App() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="text-sm sm:text-base font-bold text-textPrimary">Doctor-Visit Clinical Summary</h3>
+                          <h3 className="text-sm sm:text-base font-bold text-textPrimary">My Health Report</h3>
                           <span className="text-[10px] font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                            Clinician Ready
+                            Doctor & Personal Ready
                           </span>
                         </div>
                         <p className="text-xs text-textSecondary mt-1 max-w-xl leading-relaxed">
-                          Prepare for your next medical appointment with an organized, evidence-based summary. Strictly separates your recorded cycle facts, statistical estimates, and self-reported symptoms.
+                          Prepare for your next medical appointment or review your personal health trends with one unified, evidence-based report. Strictly separates recorded facts, statistical predictions, and self-reported symptoms.
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                       <button
-                        onClick={handleOpenDoctorSummary}
+                        onClick={() => {
+                          setActiveTab('report');
+                          if (!reportData) fetchHealthReport('', '');
+                        }}
                         className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-semibold shadow-soft hover:shadow-md transition flex items-center justify-center gap-1.5"
                       >
                         <FileText size={14} />
-                        <span>View Summary</span>
+                        <span>Open My Health Report</span>
                       </button>
                       <button
-                        onClick={handlePrintDoctorSummary}
+                        onClick={handlePrintHealthReport}
                         className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-purple-50 text-primary border border-purple-200 text-xs font-semibold shadow-xs transition flex items-center justify-center gap-1.5"
                         title="Print or Save PDF report"
                       >
@@ -2232,8 +2378,8 @@ function App() {
                         className="px-2 py-2 rounded-xl border border-purple-100 text-xs focus:ring-1 focus:ring-primary outline-none w-32"
                       >
                       </input>
-                      <button 
-                        type="submit" 
+                      <button
+                        type="submit"
                         className="bg-primary text-white px-3 rounded-xl hover:bg-primary-dark transition text-xs font-semibold"
                       >
                         Add
@@ -2269,8 +2415,8 @@ function App() {
                                 </span>
                               </div>
                             </div>
-                            <button 
-                              onClick={() => handleDeleteReminder(rem.reminder_id)} 
+                            <button
+                              onClick={() => handleDeleteReminder(rem.reminder_id)}
                               className="text-rose-400 p-1.5 rounded-lg hover:bg-rose-50 transition"
                               title="Delete reminder"
                             >
@@ -2301,26 +2447,58 @@ function App() {
                             {user.email}
                           </div>
                         </div>
-                        
-                        <div className="flex items-center space-x-2 pt-2">
-                          <input
-                            type="checkbox"
-                            id="profilePcosToggle"
-                            checked={user.has_pcos}
-                            onChange={(e) => handleUpdateProfilePcos(e.target.checked)}
-                            className="rounded text-primary focus:ring-primary h-4 w-4 cursor-pointer"
-                          />
-                          <label htmlFor="profilePcosToggle" className="text-xs text-textPrimary font-medium select-none cursor-pointer">
-                            Active PCOS / Hormonal irregularities log
-                          </label>
+
+                        {/* Cycle Tracking Mode & Preferences */}
+                        <div className="pt-3 border-t border-purple-100/70 mt-3 space-y-3">
+                          <div>
+                            <span className="block text-[10px] font-semibold text-textSecondary uppercase tracking-wider mb-1.5">
+                              Cycle Tracking Mode
+                            </span>
+                            <div className="flex items-start space-x-2.5">
+                              <input
+                                type="checkbox"
+                                id="profilePcosToggle"
+                                checked={user.has_pcos}
+                                onChange={(e) => handleUpdateProfilePcos(e.target.checked)}
+                                className="rounded text-primary focus:ring-primary h-4 w-4 cursor-pointer mt-0.5"
+                              />
+                              <div>
+                                <label htmlFor="profilePcosToggle" className="text-xs text-textPrimary font-medium select-none cursor-pointer">
+                                  PCOS-Aware Tracking
+                                </label>
+                                <p className="text-[11px] text-textSecondary leading-snug mt-0.5">
+                                  Personalize your tracking experience for PCOS-related concerns. OvaCare AI can help you record symptoms and understand your cycle history, but it cannot diagnose or rule out PCOS.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label htmlFor="profileDiagnosisStatus" className="block text-[10px] font-semibold text-textSecondary uppercase tracking-wider mb-1">
+                              Self-Reported Diagnosis Status (Optional)
+                            </label>
+                            <select
+                              id="profileDiagnosisStatus"
+                              value={user.pcos_diagnosis_status || 'prefer_not_to_say'}
+                              onChange={(e) => handleUpdateDiagnosisStatus(e.target.value)}
+                              className="w-full bg-white/70 border border-purple-100 rounded-xl px-3 py-2 text-xs text-textPrimary focus:outline-none focus:ring-1 focus:ring-primary"
+                            >
+                              <option value="prefer_not_to_say">Prefer not to say</option>
+                              <option value="diagnosed">Diagnosed by a healthcare professional</option>
+                              <option value="suspected">Suspected / exploring</option>
+                            </select>
+                            <p className="text-[10px] text-textLight mt-1">
+                              Kept strictly private and only included in clinical export reports if you choose.
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
 
                     <div className="mt-8 border-t border-purple-100 pt-4 text-center">
                       <p className="text-[10px] text-textLight">HIPAA Compliant User Records System</p>
-                      <button 
-                        onClick={handleLogout} 
+                      <button
+                        onClick={handleLogout}
                         className="mt-2 text-xs text-rose-500 font-semibold hover:underline"
                       >
                         Sign Out of Account
@@ -2332,113 +2510,129 @@ function App() {
             )}
 
             {/* ==========================================
-                TAB: ADMIN PORTAL
+                TAB: ADMIN PORTAL (Admin role guarded)
                 ========================================== */}
             {activeTab === 'admin' && (
-              <div className="space-y-6">
-                <div className="glass-panel p-6 rounded-3xl">
-                  <h3 className="text-lg font-semibold text-textPrimary mb-1">Admin Database Dashboard</h3>
-                  <p className="text-xs text-textSecondary mb-6">Database statistics overview and synthetic records audit</p>
-                  
-                  {adminStats ? (
-                    <div className="space-y-6">
-                      {/* Aggregate Metrics Grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="p-4 rounded-2xl bg-purple-50 border border-purple-100 text-center">
-                          <span className="text-[10px] text-textSecondary font-semibold uppercase">Total Users</span>
-                          <h4 className="text-2xl font-bold text-primary mt-1">{adminStats.total_users}</h4>
-                        </div>
-                        <div className="p-4 rounded-2xl bg-fuchsia-50 border border-fuchsia-100 text-center">
-                          <span className="text-[10px] text-textSecondary font-semibold uppercase">Cycles Seeded</span>
-                          <h4 className="text-2xl font-bold text-fuchsia-600 mt-1">{adminStats.total_cycles}</h4>
-                        </div>
-                        <div className="p-4 rounded-2xl bg-pink-50 border border-pink-100 text-center">
-                          <span className="text-[10px] text-textSecondary font-semibold uppercase">Wellness Logs</span>
-                          <h4 className="text-2xl font-bold text-rose-500 mt-1">{adminStats.total_logs}</h4>
-                        </div>
-                        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100 text-center">
-                          <span className="text-[10px] text-textSecondary font-semibold uppercase">PCOS Rate</span>
-                          <h4 className="text-2xl font-bold text-blue-600 mt-1">{adminStats.pcos_ratio_percentage}%</h4>
-                        </div>
-                      </div>
+              user?.role === 'admin' ? (
+                <div className="space-y-6">
+                  <div className="glass-panel p-6 rounded-3xl">
+                    <h3 className="text-lg font-semibold text-textPrimary mb-1">Admin Database Dashboard</h3>
+                    <p className="text-xs text-textSecondary mb-6">Database statistics overview and synthetic records audit</p>
 
-                      {/* PCOS vs Cycle Length Analysis */}
-                      <div className="p-4 rounded-2xl bg-white/50 border border-purple-100/50">
-                        <h4 className="text-xs font-semibold text-textPrimary mb-3 uppercase tracking-wider">Hormonal Profile Analysis</h4>
-                        <table className="w-full text-xs text-left">
-                          <thead>
-                            <tr className="border-b border-purple-100 text-textSecondary pb-2">
-                              <th className="py-2">PCOS Profile</th>
-                              <th className="py-2">Avg Cycle Length</th>
-                              <th className="py-2">Avg Period Length</th>
-                              <th className="py-2">Cycles Audited</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {adminStats.pcos_cycle_analysis.map((row, idx) => (
-                              <tr key={idx} className="border-b border-purple-50 text-textPrimary">
-                                <td className="py-2.5 font-medium">{row.has_pcos ? 'Yes (Hormonal Irregularity)' : 'No (Standard Regular)'}</td>
-                                <td className="py-2.5">{round(row.avg_cycle, 1)} Days</td>
-                                <td className="py-2.5">{round(row.avg_period, 1)} Days</td>
-                                <td className="py-2.5">{row.cycle_count} logs</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                    {adminStats ? (
+                      <div className="space-y-6">
+                        {/* Aggregate Metrics Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="p-4 rounded-2xl bg-purple-50 border border-purple-100 text-center">
+                            <span className="text-[10px] text-textSecondary font-semibold uppercase">Total Users</span>
+                            <h4 className="text-2xl font-bold text-primary mt-1">{adminStats.total_users}</h4>
+                          </div>
+                          <div className="p-4 rounded-2xl bg-fuchsia-50 border border-fuchsia-100 text-center">
+                            <span className="text-[10px] text-textSecondary font-semibold uppercase">Cycles Seeded</span>
+                            <h4 className="text-2xl font-bold text-fuchsia-600 mt-1">{adminStats.total_cycles}</h4>
+                          </div>
+                          <div className="p-4 rounded-2xl bg-pink-50 border border-pink-100 text-center">
+                            <span className="text-[10px] text-textSecondary font-semibold uppercase">Wellness Logs</span>
+                            <h4 className="text-2xl font-bold text-rose-500 mt-1">{adminStats.total_logs}</h4>
+                          </div>
+                          <div className="p-4 rounded-2xl bg-blue-50 border border-blue-100 text-center">
+                            <span className="text-[10px] text-textSecondary font-semibold uppercase">PCOS-Aware Rate</span>
+                            <h4 className="text-2xl font-bold text-blue-600 mt-1">{adminStats.pcos_ratio_percentage}%</h4>
+                          </div>
+                        </div>
 
-                      {/* Aggregate Lifestyle Cohorts Activity */}
-                      <div>
-                        <h4 className="text-xs font-semibold text-textPrimary mb-3 uppercase tracking-wider">Lifestyle Cohorts Activity (De-identified)</h4>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-xs text-left border-collapse">
+                        {/* PCOS vs Cycle Length Analysis */}
+                        <div className="p-4 rounded-2xl bg-white/50 border border-purple-100/50">
+                          <h4 className="text-xs font-semibold text-textPrimary mb-3 uppercase tracking-wider">Tracking Mode Analysis</h4>
+                          <table className="w-full text-xs text-left">
                             <thead>
-                              <tr className="border-b border-purple-100 text-textSecondary text-[10px] uppercase font-bold">
-                                <th className="py-2 pb-1">Lifestyle Cohort</th>
-                                <th className="py-2 pb-1">Enrolled Patients</th>
-                                <th className="py-2 pb-1">Total Logs Tracked</th>
-                                <th className="py-2 pb-1 text-right">Data Privacy Status</th>
+                              <tr className="border-b border-purple-100 text-textSecondary pb-2">
+                                <th className="py-2">Tracking Mode</th>
+                                <th className="py-2">Avg Cycle Length</th>
+                                <th className="py-2">Avg Period Length</th>
+                                <th className="py-2">Cycles Audited</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {adminStats.activity_cohorts && adminStats.activity_cohorts.length > 0 ? (
-                                adminStats.activity_cohorts.map((c, idx) => (
-                                  <tr key={idx} className="border-b border-purple-50 hover:bg-purple-50/30 text-textPrimary transition">
-                                    <td className="py-2.5 font-medium">{c.lifestyle}</td>
-                                    <td className="py-2.5">{c.user_count} Patients</td>
-                                    <td className="py-2.5 font-bold text-primary">{c.total_logs}</td>
-                                    <td className="py-2.5 text-right">
-                                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold">
-                                        De-identified
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))
-                              ) : (
-                                <tr>
-                                  <td colSpan={4} className="py-4 text-center text-textLight italic">No cohort statistics available.</td>
+                              {adminStats.pcos_cycle_analysis.map((row, idx) => (
+                                <tr key={idx} className="border-b border-purple-50 text-textPrimary">
+                                  <td className="py-2.5 font-medium">{row.has_pcos ? 'PCOS-Aware Tracking' : 'Standard Tracking'}</td>
+                                  <td className="py-2.5">{round(row.avg_cycle, 1)} Days</td>
+                                  <td className="py-2.5">{round(row.avg_period, 1)} Days</td>
+                                  <td className="py-2.5">{row.cycle_count} logs</td>
                                 </tr>
-                              )}
+                              ))}
                             </tbody>
                           </table>
                         </div>
+
+                        {/* Aggregate Lifestyle Cohorts Activity */}
+                        <div>
+                          <h4 className="text-xs font-semibold text-textPrimary mb-3 uppercase tracking-wider">Lifestyle Cohorts Activity (De-identified)</h4>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs text-left border-collapse">
+                              <thead>
+                                <tr className="border-b border-purple-100 text-textSecondary text-[10px] uppercase font-bold">
+                                  <th className="py-2 pb-1">Lifestyle Cohort</th>
+                                  <th className="py-2 pb-1">Enrolled Patients</th>
+                                  <th className="py-2 pb-1">Total Logs Tracked</th>
+                                  <th className="py-2 pb-1 text-right">Data Privacy Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {adminStats.activity_cohorts && adminStats.activity_cohorts.length > 0 ? (
+                                  adminStats.activity_cohorts.map((c, idx) => (
+                                    <tr key={idx} className="border-b border-purple-50 hover:bg-purple-50/30 text-textPrimary transition">
+                                      <td className="py-2.5 font-medium">{c.lifestyle}</td>
+                                      <td className="py-2.5">{c.user_count} Patients</td>
+                                      <td className="py-2.5 font-bold text-primary">{c.total_logs}</td>
+                                      <td className="py-2.5 text-right">
+                                        <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold">
+                                          De-identified
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={4} className="py-4 text-center text-textLight italic">No cohort statistics available.</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-textLight italic text-center py-6">Connecting database admin metrics...</p>
-                  )}
+                    ) : (
+                      <div className="text-center py-8">
+                        <div className="inline-block animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent mb-2"></div>
+                        <p className="text-xs text-textSecondary">Loading database metrics...</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="glass-panel p-8 rounded-3xl text-center max-w-md mx-auto my-12 space-y-3">
+                  <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
+                    <AlertCircle size={24} />
+                  </div>
+                  <h3 className="text-base font-bold text-textPrimary">Access Denied</h3>
+                  <p className="text-xs text-textSecondary">
+                    The Admin Database Dashboard is restricted to administrator accounts.
+                  </p>
+                  <button
+                    onClick={() => setActiveTab('dashboard')}
+                    className="mt-2 px-4 py-2 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-dark transition"
+                  >
+                    Return to Dashboard
+                  </button>
+                </div>
+              )
             )}
 
             {/* Community Module Tab */}
             {activeTab === 'community' && (
               <Community user={user} token={token} apiBase={API_BASE} />
-            )}
-
-            {/* 3D AI Companion Module Tab */}
-            {activeTab === 'companion' && (
-              <Companion user={user} token={token} apiBase={API_BASE} />
             )}
           </>
         )}
@@ -2456,6 +2650,7 @@ function App() {
           { tab: 'calendar', icon: CalendarIcon, label: 'Calendar' },
           { tab: 'logs', icon: Heart, label: 'Logs' },
           { tab: 'analytics', icon: BarChart2, label: 'Charts' },
+          { tab: 'report', icon: FileText, label: 'Report' },
           { tab: 'profile', icon: User, label: 'Settings' }
         ].map(({ tab, icon: Icon, label }) => {
           const isActive = activeTab === tab;
@@ -2466,7 +2661,7 @@ function App() {
               aria-label={label}
               className="flex flex-col items-center justify-center relative transition group focus:outline-none"
             >
-              <Icon 
+              <Icon
                 size={20}
                 className={`transition-colors duration-200 ${isActive ? 'text-primary' : 'text-textLight hover:text-textSecondary'}`}
               />
@@ -2487,7 +2682,7 @@ function App() {
           <div className="glass-panel w-full max-w-sm rounded-2xl p-5 sm:p-6 shadow-premium relative max-h-[90vh] overflow-y-auto">
             <h3 className="text-base font-semibold text-textPrimary mb-1">Add Cycle Dates</h3>
             <p className="text-xs text-textSecondary mb-4">Record a new menstrual start event</p>
-            
+
             <form onSubmit={handleAddCycle} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-semibold text-textSecondary uppercase tracking-wider mb-1">Start Date</label>
@@ -2633,271 +2828,7 @@ function App() {
       {/* ==========================================
           MODAL: DOCTOR-VISIT CLINICAL SUMMARY
           ========================================== */}
-      {showDoctorModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-3xl w-full border border-purple-100 shadow-2xl space-y-5 max-h-[88vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex justify-between items-start pb-3 border-b border-purple-100/80">
-              <div className="flex items-center space-x-3">
-                <div className="p-2.5 rounded-2xl bg-primary/10 text-primary">
-                  <FileText size={22} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base sm:text-lg font-bold text-textPrimary">Doctor-Visit Clinical Summary</h3>
-                    <span className="text-[10px] font-bold bg-primary/10 text-primary px-2.5 py-0.5 rounded-full">
-                      Clinician Review
-                    </span>
-                  </div>
-                  <p className="text-xs text-textSecondary mt-0.5">
-                    Separating Recorded Facts, Statistical Estimates, and User-Reported Symptoms
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowDoctorModal(false)}
-                className="text-textLight hover:text-textPrimary p-1.5 rounded-xl hover:bg-slate-100 transition text-sm"
-              >
-                ✕
-              </button>
-            </div>
-
-            {doctorSummaryLoading ? (
-              <div className="text-center py-16 space-y-3">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-3 border-primary border-t-transparent"></div>
-                <p className="text-xs text-textSecondary">Compiling clinical categories and verifying boundaries...</p>
-              </div>
-            ) : doctorSummaryData ? (
-              <div className="space-y-5">
-                {/* Patient Context & Non-Diagnostic Notice */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 bg-slate-50 rounded-2xl border border-slate-200/70 text-xs">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Patient</span>
-                    <span className="font-semibold text-textPrimary">{doctorSummaryData.patient_context?.username || user?.username}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Age</span>
-                    <span className="font-semibold text-textPrimary">{doctorSummaryData.patient_context?.age || 'Unspecified'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">Lifestyle</span>
-                    <span className="font-semibold text-textPrimary">{doctorSummaryData.patient_context?.lifestyle || 'Moderate'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500 block">PCOS Reported</span>
-                    <span className="font-semibold text-textPrimary">{doctorSummaryData.patient_context?.has_pcos_reported ? 'Yes' : 'No'}</span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200/80 text-[11px] text-amber-900 leading-relaxed flex items-start space-x-2">
-                  <Info size={14} className="text-amber-700 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <strong>Clinical Notice: </strong>
-                    {doctorSummaryData.clinical_disclaimer}
-                  </div>
-                </div>
-
-                {/* Category 1: Recorded Facts */}
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/30 overflow-hidden">
-                  <div className="px-4 py-2.5 bg-emerald-100/70 text-emerald-900 flex justify-between items-center">
-                    <span className="font-bold text-xs uppercase tracking-wider">Category 1 — Recorded Facts</span>
-                    <span className="text-[11px] font-semibold bg-emerald-200/70 px-2 py-0.5 rounded-full">
-                      {doctorSummaryData.category_1_recorded_facts?.total_cycles_recorded || 0} cycles logged
-                    </span>
-                  </div>
-                  <div className="p-4 space-y-3">
-                    <p className="text-[11px] text-emerald-950 leading-relaxed">
-                      {doctorSummaryData.category_1_recorded_facts?.description}
-                    </p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead>
-                          <tr className="border-b border-emerald-200 text-[10px] uppercase text-emerald-800">
-                            <th className="pb-1.5 font-bold">Start Date</th>
-                            <th className="pb-1.5 font-bold">End Date</th>
-                            <th className="pb-1.5 font-bold">Cycle Length</th>
-                            <th className="pb-1.5 font-bold">Period Length</th>
-                            <th className="pb-1.5 font-bold">Status</th>
-                            <th className="pb-1.5 font-bold">Gap Clarification</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-emerald-100 text-slate-700">
-                          {(doctorSummaryData.category_1_recorded_facts?.cycles || []).map((c, idx) => (
-                            <tr key={idx}>
-                              <td className="py-1.5">{c.start_date || '—'}</td>
-                              <td className="py-1.5">{c.end_date || '—'}</td>
-                              <td className="py-1.5 font-semibold text-emerald-900">{c.recorded_cycle_length ? `${c.recorded_cycle_length}d` : '—'}</td>
-                              <td className="py-1.5">{c.recorded_period_length ? `${c.recorded_period_length}d` : '—'}</td>
-                              <td className="py-1.5">{c.is_irregular ? 'Irregular' : 'Regular'}</td>
-                              <td className="py-1.5 text-[10px] text-slate-500">{c.gap_clarification}</td>
-                            </tr>
-                          ))}
-                          {(!doctorSummaryData.category_1_recorded_facts?.cycles || doctorSummaryData.category_1_recorded_facts.cycles.length === 0) && (
-                            <tr>
-                              <td colSpan="6" className="py-3 text-center text-slate-400 italic">No cycle onset dates recorded yet.</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Flow distribution */}
-                    <div className="pt-2 border-t border-emerald-200/50 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-emerald-900 uppercase mr-1">Flow Days Logged:</span>
-                      {Object.entries(doctorSummaryData.category_1_recorded_facts?.menstrual_flow_records?.flow_distribution || {}).map(([k, v]) => (
-                        <span key={k} className="text-[10px] font-medium bg-white px-2 py-0.5 rounded-md border border-emerald-200 text-slate-700">
-                          <strong>{k}:</strong> {v}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Category 2: Statistical Estimates */}
-                <div className="rounded-2xl border border-purple-200 bg-purple-50/30 overflow-hidden">
-                  <div className="px-4 py-2.5 bg-purple-100/70 text-purple-900 flex justify-between items-center">
-                    <span className="font-bold text-xs uppercase tracking-wider">Category 2 — Statistical Estimates & Predictions</span>
-                    <span className="text-[11px] font-semibold bg-purple-200/70 px-2 py-0.5 rounded-full">Algorithmic Model</span>
-                  </div>
-                  <div className="p-4 space-y-3">
-                    <p className="text-[11px] text-purple-950 leading-relaxed">
-                      {doctorSummaryData.category_2_statistical_estimates?.description}
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <div className="p-3 bg-white rounded-xl border border-purple-100 shadow-2xs">
-                        <span className="text-[10px] text-slate-500 block">Average Cycle Length</span>
-                        <span className="text-base font-bold text-primary">{doctorSummaryData.category_2_statistical_estimates?.average_cycle_length_days} days</span>
-                      </div>
-                      <div className="p-3 bg-white rounded-xl border border-purple-100 shadow-2xs">
-                        <span className="text-[10px] text-slate-500 block">Average Period Length</span>
-                        <span className="text-base font-bold text-primary">{doctorSummaryData.category_2_statistical_estimates?.average_period_length_days} days</span>
-                      </div>
-                      <div className="p-3 bg-white rounded-xl border border-purple-100 shadow-2xs">
-                        <span className="text-[10px] text-slate-500 block">Next Estimated Period</span>
-                        <span className="text-base font-bold text-primary">
-                          {doctorSummaryData.category_2_statistical_estimates?.predicted_next_cycle?.estimated_next_start_date || 'Pending'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-xs text-slate-700">
-                      <strong>Regularity Assessment: </strong>
-                      {doctorSummaryData.category_2_statistical_estimates?.regularity_assessment}
-                    </div>
-                    <div className="text-[10px] text-slate-500 italic">
-                      * {doctorSummaryData.category_2_statistical_estimates?.methodology_note}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Category 3: User-Reported Symptoms */}
-                <div className="rounded-2xl border border-rose-200 bg-rose-50/30 overflow-hidden">
-                  <div className="px-4 py-2.5 bg-rose-100/70 text-rose-900 flex justify-between items-center">
-                    <span className="font-bold text-xs uppercase tracking-wider">Category 3 — User-Reported Symptoms & Notes</span>
-                    <span className="text-[11px] font-semibold bg-rose-200/70 px-2 py-0.5 rounded-full">
-                      {doctorSummaryData.category_3_user_reported_symptoms?.total_days_logged || 0} days logged
-                    </span>
-                  </div>
-                  <div className="p-4 space-y-3">
-                    <p className="text-[11px] text-rose-950 leading-relaxed">
-                      {doctorSummaryData.category_3_user_reported_symptoms?.description}
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      <div className="p-2.5 bg-white rounded-xl border border-rose-100">
-                        <strong className="text-[11px] text-rose-950 block mb-1">Cramps Reported:</strong>
-                        <div className="flex flex-wrap gap-1 text-[10px] text-slate-600">
-                          {Object.entries(doctorSummaryData.category_3_user_reported_symptoms?.symptom_frequency_breakdown?.cramps || {}).map(([k, v]) => (
-                            <span key={k} className="bg-slate-100 px-1.5 py-0.5 rounded">{k}: {v}</span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-rose-100">
-                        <strong className="text-[11px] text-rose-950 block mb-1">Fatigue Reported:</strong>
-                        <div className="flex flex-wrap gap-1 text-[10px] text-slate-600">
-                          {Object.entries(doctorSummaryData.category_3_user_reported_symptoms?.symptom_frequency_breakdown?.fatigue || {}).map(([k, v]) => (
-                            <span key={k} className="bg-slate-100 px-1.5 py-0.5 rounded">{k}: {v}</span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-rose-100">
-                        <strong className="text-[11px] text-rose-950 block mb-1">Energy Levels Reported:</strong>
-                        <div className="flex flex-wrap gap-1 text-[10px] text-slate-600">
-                          {Object.entries(doctorSummaryData.category_3_user_reported_symptoms?.symptom_frequency_breakdown?.energy_levels || {}).map(([k, v]) => (
-                            <span key={k} className="bg-slate-100 px-1.5 py-0.5 rounded">{k}: {v}</span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-rose-100">
-                        <strong className="text-[11px] text-rose-950 block mb-1">Sleep Average:</strong>
-                        <div className="text-[11px] text-slate-700">
-                          {doctorSummaryData.category_3_user_reported_symptoms?.symptom_frequency_breakdown?.sleep_hours_summary?.average_hours_per_night
-                            ? `${doctorSummaryData.category_3_user_reported_symptoms.symptom_frequency_breakdown.sleep_hours_summary.average_hours_per_night} hrs/night`
-                            : 'Untracked'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Evidence-supported longitudinal patterns */}
-                    {doctorSummaryData.category_3_user_reported_symptoms?.observed_longitudinal_patterns?.length > 0 && (
-                      <div className="space-y-1.5 pt-2 border-t border-rose-100">
-                        <span className="text-[10px] font-bold text-rose-900 uppercase block">Evidence-Supported Patterns:</span>
-                        {doctorSummaryData.category_3_user_reported_symptoms.observed_longitudinal_patterns.map((p, idx) => (
-                          <div key={idx} className="p-2.5 bg-white rounded-xl border border-rose-100 text-xs">
-                            <span className="font-bold text-primary">{p.pattern_title}: </span>
-                            <span className="text-slate-700">{p.observation}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Safety Guidance */}
-                <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1.5">
-                  <span className="font-bold text-amber-950 uppercase tracking-wider text-[10px] block">
-                    Clinical Safety Guidance & Red-Flag Warnings:
-                  </span>
-                  <ul className="list-disc list-inside space-y-1 text-[11px]">
-                    {(doctorSummaryData.safety_guidance || []).map((s, idx) => (
-                      <li key={idx}>{s}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Modal Actions */}
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-3 border-t border-purple-100">
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={handlePrintDoctorSummary}
-                  className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-semibold shadow-soft hover:shadow-md transition flex items-center justify-center gap-1.5"
-                >
-                  <Printer size={13} />
-                  <span>Print / Save PDF</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDownloadDoctorJson}
-                  disabled={!doctorSummaryData}
-                  className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded-xl bg-white hover:bg-purple-50 text-slate-700 border border-slate-200 text-xs font-semibold shadow-xs transition flex items-center justify-center gap-1.5"
-                >
-                  <Download size={13} />
-                  <span>Download JSON</span>
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowDoctorModal(false)}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-purple-100 text-textSecondary text-xs font-semibold hover:bg-purple-50 transition"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal replaced by unified My Health Report tab */}
 
       {/* Global Notifications */}
       {error && (

@@ -103,7 +103,7 @@ def token_required(f):
             
         # Verify user still exists in database
         users = execute_query(
-            "SELECT user_id, username, email, age, lifestyle, has_pcos FROM users WHERE user_id = :uid", 
+            "SELECT user_id, username, email, age, lifestyle, has_pcos, pcos_diagnosis_status FROM users WHERE user_id = :uid",
             {"uid": user_id}
         )
         if not users:
@@ -111,5 +111,6 @@ def token_required(f):
             
         current_user = users[0]
         current_user["has_pcos"] = bool(current_user["has_pcos"])
+        current_user["pcos_diagnosis_status"] = current_user.get("pcos_diagnosis_status") or "prefer_not_to_say"
         return f(current_user=current_user, *args, **kwargs)
     return decorated

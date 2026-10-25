@@ -44,3 +44,146 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Print specific styling for My Health Report */
+@page {
+  size: A4 portrait;
+  margin: 12mm 14mm 14mm 14mm;
+}
+
+@media print {
+  /* Hide non-printable navigation, header bars, action buttons, modals */
+  nav,
+  header,
+  footer,
+  .no-print,
+  .bottom-nav,
+  button:not(.allow-print) {
+    display: none !important;
+  }
+
+  /* Force exact print colors and remove default page margins */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-sizing: border-box !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 11.5px !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Reset print container to use full page width and remove screen shadows */
+  .print-container {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+  }
+
+  /* Compact spacing between major sections in print (removes massive gaps) */
+  .print-container .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 10px !important;
+  }
+
+  .print-container .space-y-3\.5 > :not([hidden]) ~ :not([hidden]),
+  .print-container .space-y-3 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 6px !important;
+  }
+
+  /* Flatten glassmorphism panels to crisp print-friendly cards */
+  .glass-panel,
+  .print-card {
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
+    padding: 8px 12px !important;
+  }
+
+  /* Allow sections to flow across pages naturally instead of forcing giant blank gaps */
+  .report-section,
+  .page-break {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+    margin-bottom: 10px !important;
+  }
+
+  /* Keep section headers attached to the start of their section */
+  .report-section-header {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  /* Avoid breaking inside discrete items like stat cards, pattern cards, and table rows */
+  .print-avoid-break,
+  .print-card-item,
+  tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Print table formatting with fixed layout and repeated headers */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+    font-size: 11px !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  th {
+    background-color: #f1f5f9 !important;
+    color: #334155 !important;
+    border-bottom: 1.5px solid #cbd5e1 !important;
+    font-weight: 600 !important;
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+  }
+
+  td {
+    padding: 5px 8px !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+
+  /* Ensure multi-column grids don't collapse to 1 single column in print */
+  .print-grid-4 {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .print-grid-3 {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .print-grid-2 {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  /* Expand scrollable note boxes for full readability */
+  .print-container .overflow-y-auto,
+  .print-container .max-h-48 {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}

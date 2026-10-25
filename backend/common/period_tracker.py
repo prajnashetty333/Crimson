@@ -354,6 +354,8 @@ def calculate_period_prediction(cycles, has_pcos=False):
             "tracking_status": "insufficient_history",
             "has_unclarified_gap": False,
             "pcos_mode": bool(has_pcos),
+            "pcos_aware_tracking": bool(has_pcos),
+            "tracking_mode": "PCOS-Aware Tracking" if bool(has_pcos) else "Standard Tracking",
             "message": "Not enough cycle history. Providing baseline prediction.",
             "history_quality": "insufficient",
             "history_quality_description": "No recorded cycle history.",
@@ -452,7 +454,7 @@ def calculate_period_prediction(cycles, has_pcos=False):
         can_classify_regularity = True
         regularity_assessment = "irregular"
         is_irregular = True
-        regularity_message = "Irregular cycle pattern observed due to confirmed long cycle."
+        regularity_message = "Your recorded cycle history shows irregular intervals. There can be several reasons for this. If the pattern continues or concerns you, consider discussing it with a qualified healthcare professional."
     elif len(usable_intervals) < 2:
         can_classify_regularity = False
         regularity_assessment = "insufficient_data"
@@ -464,7 +466,7 @@ def calculate_period_prediction(cycles, has_pcos=False):
             can_classify_regularity = True
             regularity_assessment = "irregular"
             is_irregular = True
-            regularity_message = f"Cycle lengths show notable variance ({min(usable_intervals)} to {max(usable_intervals)} days across history)."
+            regularity_message = "Your recorded cycle history shows irregular intervals. There can be several reasons for this. If the pattern continues or concerns you, consider discussing it with a qualified healthcare professional."
         else:
             can_classify_regularity = True
             regularity_assessment = "regular"
@@ -547,6 +549,8 @@ def calculate_period_prediction(cycles, has_pcos=False):
         "tracking_status": tracking_status,
         "has_unclarified_gap": has_unclarified_gap,
         "pcos_mode": bool(has_pcos),
+        "pcos_aware_tracking": bool(has_pcos),
+        "tracking_mode": "PCOS-Aware Tracking" if bool(has_pcos) else "Standard Tracking",
         "message": msg,
         "history_quality": history_quality,
         "history_quality_description": history_quality_description,
