@@ -11,7 +11,7 @@ if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 from app import app, generate_auth_token
-from db import execute_query, execute_write
+from db import execute_query, execute_write, init_test_database
 
 class TestCommunityModule(unittest.TestCase):
     """
@@ -22,6 +22,7 @@ class TestCommunityModule(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        init_test_database()
         app.config['TESTING'] = True
         cls.client = app.test_client()
 

@@ -3,12 +3,26 @@ import uuid
 import numpy as np
 from datetime import datetime, timedelta
 from functools import wraps
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from dotenv import load_dotenv
 from db import execute_query, execute_write
+from common.period_tracker import (
+    calculate_intervals,
+    validate_cycle_inputs,
+    recalculate_user_cycles,
+    log_cycle,
+    delete_user_cycle,
+    update_cycle_clarification,
+    calculate_period_prediction,
+    calculate_cycle_analytics_metrics,
+)
+from common.wellbeing_tracker import get_user_wellbeing_insights
+from common.doctor_summary import get_user_doctor_summary, render_doctor_summary_html
+
+VALID_ENERGY_LEVELS = {"High", "Moderate", "Low", "Very Low"}
 
 _ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 load_dotenv(_ENV_FILE)
@@ -136,7 +150,7 @@ def token_required(f):
             
         # Verify user still exists in database
         users = execute_query(
-            "SELECT user_id, username, email, age, lifestyle, has_pcos FROM users WHERE user_id = :uid", 
+            "SELECT user_id, username, email, age, lifestyle, has_pcos, role FROM users WHERE user_id = :uid",
             {"uid": user_id}
         )
         if not users:
@@ -144,6 +158,21 @@ def token_required(f):
             
         current_user = users[0]
         current_user['has_pcos'] = bool(current_user['has_pcos'])
+        current_user['role'] = current_user.get('role') or 'member'
+        return f(current_user=current_user, *args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    """
+    Decorator to enforce administrator role authorization on endpoints.
+    Enforces valid authentication and ensures the authenticated user has the 'admin' role.
+    Returns 401 for missing/invalid/expired token, 403 for authenticated non-admin accounts.
+    """
+    @wraps(f)
+    @token_required
+    def decorated(current_user, *args, **kwargs):
+        if current_user.get('role') != 'admin':
+            return jsonify({"error": "Forbidden: Administrator privileges required"}), 403
         return f(current_user=current_user, *args, **kwargs)
     return decorated
 
@@ -409,103 +438,41 @@ def add_cycle(current_user):
         
     start_date_str = data.get('start_date')
     end_date_str = data.get('end_date')
+    gap_clarification = data.get('gap_clarification')
     
-    try:
-        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date() if end_date_str else None
-    except ValueError:
-        return jsonify({"error": "Dates must be in YYYY-MM-DD format"}), 400
-        
-    if end_date and end_date < start_date:
-        return jsonify({"error": "End date cannot be earlier than start date"}), 400
-        
-    period_length = (end_date - start_date).days if end_date else None
-    cycle_id = f"cyc_{uuid.uuid4().hex[:12]}"
-    
-    # Get previous cycle to calculate cycle_length
-    prev_cycle = execute_query(
-        """
-        SELECT * FROM cycles 
-        WHERE user_id = :user_id AND start_date < :start_date 
-        ORDER BY start_date DESC LIMIT 1
-        """,
-        {"user_id": user_id, "start_date": start_date}
+    cycle_id, err, code = log_cycle(
+        user_id=user_id,
+        start_date_str=start_date_str,
+        end_date_str=end_date_str,
+        gap_clarification=gap_clarification
     )
-    
-    cycle_length = None
-    if prev_cycle:
-        prev_start = datetime.strptime(prev_cycle[0]['start_date'], "%Y-%m-%d").date()
-        cycle_length = (start_date - prev_start).days
+    if err:
+        return jsonify({"error": err}), code
         
-    has_pcos = current_user['has_pcos']
-    
-    # Irregular calculation
-    irregular = False
-    if has_pcos:
-        irregular = True
-    elif cycle_length:
-        avg_cycle_res = execute_query(
-            "SELECT AVG(cycle_length) as avg_len FROM cycles WHERE user_id = :user_id", 
-            {"user_id": user_id}
-        )
-        avg_len = avg_cycle_res[0]['avg_len'] if avg_cycle_res and avg_cycle_res[0]['avg_len'] else 28
-        if abs(cycle_length - avg_len) > 4:
-            irregular = True
-            
-    try:
-        execute_write(
-            """
-            INSERT INTO cycles (cycle_id, user_id, start_date, end_date, cycle_length, period_length, irregular)
-            VALUES (:cycle_id, :user_id, :start_date, :end_date, :cycle_length, :period_length, :irregular)
-            """,
-            {
-                "cycle_id": cycle_id,
-                "user_id": user_id,
-                "start_date": start_date,
-                "end_date": end_date,
-                "cycle_length": cycle_length,
-                "period_length": period_length,
-                "irregular": irregular
-            }
-        )
-        
-        # Update previous cycle's cycle_length if a subsequent cycle was added
-        next_cycle = execute_query(
-            """
-            SELECT * FROM cycles 
-            WHERE user_id = :user_id AND start_date > :start_date 
-            ORDER BY start_date ASC LIMIT 1
-            """,
-            {"user_id": user_id, "start_date": start_date}
-        )
-        if next_cycle:
-            next_start = datetime.strptime(next_cycle[0]['start_date'], "%Y-%m-%d").date()
-            new_prev_len = (next_start - start_date).days
-            execute_write(
-                "UPDATE cycles SET cycle_length = :cycle_length WHERE cycle_id = :cycle_id",
-                {"cycle_length": new_prev_len, "cycle_id": cycle_id}
-            )
-            
-        return jsonify({"message": "Cycle logged successfully", "cycle_id": cycle_id}), 201
-    except Exception as e:
-        return jsonify({"error": "Failed to log cycle record"}), 500
+    return jsonify({"message": "Cycle logged successfully", "cycle_id": cycle_id}), 201
 
 @app.route('/api/cycles/<cycle_id>', methods=['DELETE'])
 @token_required
 def delete_cycle(current_user, cycle_id):
     user_id = current_user['user_id']
-    try:
-        # Check ownership before deletion
-        cycle = execute_query("SELECT user_id FROM cycles WHERE cycle_id = :cycle_id", {"cycle_id": cycle_id})
-        if not cycle:
-            return jsonify({"error": "Cycle not found"}), 404
-        if cycle[0]['user_id'] != user_id:
-            return jsonify({"error": "Forbidden: Cannot delete records belonging to another user"}), 403
-            
-        execute_write("DELETE FROM cycles WHERE cycle_id = :cycle_id AND user_id = :user_id", {"cycle_id": cycle_id, "user_id": user_id})
-        return jsonify({"message": "Cycle deleted successfully"}), 200
-    except Exception as e:
-        return jsonify({"error": "Failed to delete cycle record"}), 500
+    success, message, code = delete_user_cycle(user_id, cycle_id)
+    if not success:
+        return jsonify({"error": message}), code
+    return jsonify({"message": message}), code
+
+@app.route('/api/cycles/<cycle_id>', methods=['PUT', 'PATCH'])
+@app.route('/api/cycles/<cycle_id>/clarify', methods=['POST', 'PUT'])
+@token_required
+def clarify_cycle(current_user, cycle_id):
+    user_id = current_user['user_id']
+    data = request.json or {}
+    gap_clarification = data.get('gap_clarification') or data.get('gap_type')
+    if not gap_clarification:
+        return jsonify({"error": "Missing required field: gap_clarification"}), 400
+    success, message, code = update_cycle_clarification(user_id, cycle_id, gap_clarification)
+    if not success:
+        return jsonify({"error": message}), code
+    return jsonify({"message": message}), code
 
 # ==========================================
 # 4. Mood & Symptom Tracking Module
@@ -561,79 +528,174 @@ def save_log(current_user):
         cycle_start = datetime.strptime(curr_cycle[0]['start_date'], "%Y-%m-%d").date()
         cycle_day = (log_date - cycle_start).days + 1
         
-    mood = data.get('mood')
-    stress = data.get('stress')
-    sleep_hours = data.get('sleep_hours')
-    cramps = data.get('cramps', 'None')
-    fatigue = data.get('fatigue', 'None')
-    flow = data.get('flow', 'None')
-    
+    # Validate optional energy_level when supplied
+    energy_level = None
+    if 'energy_level' in data:
+        raw_energy = data.get('energy_level')
+        if raw_energy is not None and str(raw_energy).strip() != '':
+            e_str = str(raw_energy).strip()
+            matched = None
+            for valid in VALID_ENERGY_LEVELS:
+                if e_str.lower() == valid.lower():
+                    matched = valid
+                    break
+            if not matched:
+                return jsonify({"error": "Invalid energy_level. Allowed values: High, Moderate, Low, Very Low"}), 400
+            energy_level = matched
+        else:
+            energy_level = None
+
+    # Handle optional notes
+    notes = None
+    if 'notes' in data:
+        raw_notes = data.get('notes')
+        if raw_notes is not None:
+            notes = str(raw_notes).strip() if str(raw_notes).strip() else None
+
     # Check if a log exists for this date for this user
     existing = execute_query(
-        "SELECT log_id FROM wellness_logs WHERE user_id = :user_id AND date = :date",
+        "SELECT * FROM wellness_logs WHERE user_id = :user_id AND date = :date",
         {"user_id": user_id, "date": log_date}
     )
     
     try:
         if existing:
-            log_id = existing[0]['log_id']
+            prev = existing[0]
+            log_id = prev['log_id']
+
+            # Update only fields present in payload, preserving omitted fields
+            updated_mood = data['mood'] if 'mood' in data else prev.get('mood')
+            updated_stress = data['stress'] if 'stress' in data else prev.get('stress')
+            updated_sleep = data['sleep_hours'] if 'sleep_hours' in data else prev.get('sleep_hours')
+            updated_cramps = data['cramps'] if 'cramps' in data else prev.get('cramps')
+            updated_fatigue = data['fatigue'] if 'fatigue' in data else prev.get('fatigue')
+            updated_flow = data['flow'] if 'flow' in data else prev.get('flow')
+            updated_energy = energy_level if 'energy_level' in data else prev.get('energy_level')
+            updated_notes = notes if 'notes' in data else prev.get('notes')
+            updated_cycle_day = cycle_day if cycle_day is not None else prev.get('cycle_day')
+
             execute_write(
                 """
                 UPDATE wellness_logs 
                 SET cycle_day = :cycle_day, mood = :mood, stress = :stress, 
-                    sleep_hours = :sleep_hours, cramps = :cramps, fatigue = :fatigue, flow = :flow
+                    sleep_hours = :sleep_hours, cramps = :cramps, fatigue = :fatigue, flow = :flow,
+                    energy_level = :energy_level, notes = :notes
                 WHERE log_id = :log_id AND user_id = :user_id
                 """,
                 {
-                    "cycle_day": cycle_day,
-                    "mood": mood,
-                    "stress": stress,
-                    "sleep_hours": sleep_hours,
-                    "cramps": cramps,
-                    "fatigue": fatigue,
-                    "flow": flow,
+                    "cycle_day": updated_cycle_day,
+                    "mood": updated_mood,
+                    "stress": updated_stress,
+                    "sleep_hours": updated_sleep,
+                    "cramps": updated_cramps,
+                    "fatigue": updated_fatigue,
+                    "flow": updated_flow,
+                    "energy_level": updated_energy,
+                    "notes": updated_notes,
                     "log_id": log_id,
                     "user_id": user_id
                 }
             )
+
+            # Keep mood_logs consistent on update without duplicate records
+            if 'mood' in data:
+                if updated_mood:
+                    existing_mood = execute_query(
+                        "SELECT mood_log_id FROM mood_logs WHERE user_id = :user_id AND date = :date",
+                        {"user_id": user_id, "date": log_date}
+                    )
+                    if existing_mood:
+                        execute_write(
+                            "UPDATE mood_logs SET mood = :mood WHERE user_id = :user_id AND date = :date",
+                            {"mood": updated_mood, "user_id": user_id, "date": log_date}
+                        )
+                    else:
+                        execute_write(
+                            "INSERT INTO mood_logs (mood_log_id, user_id, mood, date) VALUES (:mood_log_id, :user_id, :mood, :date)",
+                            {"mood_log_id": f"mld_{uuid.uuid4().hex[:12]}", "user_id": user_id, "mood": updated_mood, "date": log_date}
+                        )
         else:
             log_id = f"log_{uuid.uuid4().hex[:12]}"
+            # For new records, omitted fields remain None/NULL, never coerced to 'None'
+            new_mood = data.get('mood')
+            new_stress = data.get('stress')
+            new_sleep = data.get('sleep_hours')
+            new_cramps = data.get('cramps')
+            new_fatigue = data.get('fatigue')
+            new_flow = data.get('flow')
+            new_energy = energy_level
+            new_notes = notes
+
             execute_write(
                 """
-                INSERT INTO wellness_logs (log_id, user_id, date, cycle_day, mood, stress, sleep_hours, cramps, fatigue, flow)
-                VALUES (:log_id, :user_id, :date, :cycle_day, :mood, :stress, :sleep_hours, :cramps, :fatigue, :flow)
+                INSERT INTO wellness_logs (
+                    log_id, user_id, date, cycle_day, mood, stress, sleep_hours,
+                    cramps, fatigue, flow, energy_level, notes
+                )
+                VALUES (
+                    :log_id, :user_id, :date, :cycle_day, :mood, :stress, :sleep_hours,
+                    :cramps, :fatigue, :flow, :energy_level, :notes
+                )
                 """,
                 {
                     "log_id": log_id,
                     "user_id": user_id,
                     "date": log_date,
                     "cycle_day": cycle_day,
-                    "mood": mood,
-                    "stress": stress,
-                    "sleep_hours": sleep_hours,
-                    "cramps": cramps,
-                    "fatigue": fatigue,
-                    "flow": flow
+                    "mood": new_mood,
+                    "stress": new_stress,
+                    "sleep_hours": new_sleep,
+                    "cramps": new_cramps,
+                    "fatigue": new_fatigue,
+                    "flow": new_flow,
+                    "energy_level": new_energy,
+                    "notes": new_notes
                 }
             )
             
-        if mood:
-            execute_write(
-                """
-                INSERT INTO mood_logs (mood_log_id, user_id, mood, date)
-                VALUES (:mood_log_id, :user_id, :mood, :date)
-                """,
-                {
-                    "mood_log_id": f"mld_{uuid.uuid4().hex[:12]}",
-                    "user_id": user_id,
-                    "mood": mood,
-                    "date": log_date
-                }
-            )
+            if new_mood:
+                execute_write(
+                    """
+                    INSERT INTO mood_logs (mood_log_id, user_id, mood, date)
+                    VALUES (:mood_log_id, :user_id, :mood, :date)
+                    """,
+                    {
+                        "mood_log_id": f"mld_{uuid.uuid4().hex[:12]}",
+                        "user_id": user_id,
+                        "mood": new_mood,
+                        "date": log_date
+                    }
+                )
             
         return jsonify({"message": "Wellness log saved successfully", "log_id": log_id, "cycle_day": cycle_day}), 200
     except Exception as e:
         return jsonify({"error": "Failed to save wellness log"}), 500
+
+@app.route('/api/logs/<log_id>', methods=['DELETE'])
+@token_required
+def delete_log(current_user, log_id):
+    user_id = current_user['user_id']
+    try:
+        log = execute_query(
+            "SELECT user_id, date FROM wellness_logs WHERE log_id = :log_id",
+            {"log_id": log_id}
+        )
+        if not log:
+            return jsonify({"error": "Log not found"}), 404
+        if log[0]['user_id'] != user_id:
+            return jsonify({"error": "Unauthorized"}), 403
+
+        execute_write(
+            "DELETE FROM wellness_logs WHERE log_id = :log_id AND user_id = :user_id",
+            {"log_id": log_id, "user_id": user_id}
+        )
+        execute_write(
+            "DELETE FROM mood_logs WHERE user_id = :user_id AND date = :date",
+            {"user_id": user_id, "date": log[0]['date']}
+        )
+        return jsonify({"message": "Wellness log deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": "Failed to delete wellness log"}), 500
 
 # ==========================================
 # 5. Reminder Module
@@ -730,52 +792,17 @@ def delete_reminder(current_user, reminder_id):
 def get_prediction(current_user):
     user_id = current_user['user_id']
     cycles = execute_query(
-        "SELECT start_date, cycle_length, period_length FROM cycles WHERE user_id = :user_id ORDER BY start_date DESC",
+        """
+        SELECT cycle_id, user_id, start_date, end_date, cycle_length, period_length, irregular, gap_type
+        FROM cycles
+        WHERE user_id = :user_id
+        ORDER BY start_date DESC
+        """,
         {"user_id": user_id}
     )
-    
-    if not cycles:
-        return jsonify({
-            "predicted_date": (datetime.now() + timedelta(days=10)).date().isoformat(),
-            "average_cycle_length": 28,
-            "average_period_length": 5,
-            "irregular": False,
-            "history_count": 0,
-            "delayed_days": 0,
-            "message": "Not enough cycle history. Providing baseline prediction."
-        }), 200
-        
-    cycle_lengths = [c['cycle_length'] for c in cycles if c['cycle_length'] is not None]
-    period_lengths = [c['period_length'] for c in cycles if c['period_length'] is not None]
-    
-    avg_cycle = round(sum(cycle_lengths) / len(cycle_lengths)) if cycle_lengths else 28
-    avg_period = round(sum(period_lengths) / len(period_lengths)) if period_lengths else 5
-    
-    last_start = datetime.strptime(cycles[0]['start_date'], "%Y-%m-%d").date()
-    predicted_date = last_start + timedelta(days=avg_cycle)
-    
-    is_irregular = False
-    if current_user['has_pcos']:
-        is_irregular = True
-    elif len(cycle_lengths) >= 3:
-        std_dev = np.std(cycle_lengths)
-        if std_dev > 4:
-            is_irregular = True
-            
-    today = datetime.now().date()
-    delayed_days = 0
-    if today > predicted_date:
-        delayed_days = (today - predicted_date).days
-        
-    return jsonify({
-        "predicted_date": predicted_date.isoformat(),
-        "average_cycle_length": avg_cycle,
-        "average_period_length": avg_period,
-        "irregular": is_irregular,
-        "history_count": len(cycles),
-        "delayed_days": delayed_days,
-        "message": f"Your next period is predicted to start on {predicted_date.strftime('%B %d, %Y')}"
-    }), 200
+    has_pcos = bool(current_user.get('has_pcos', False))
+    prediction_data = calculate_period_prediction(cycles, has_pcos=has_pcos)
+    return jsonify(prediction_data), 200
 
 # ==========================================
 # 7. Analytics Module API
@@ -788,7 +815,12 @@ def get_analytics(current_user):
     
     # 1. Cycle & Period History
     cycles_db = execute_query(
-        "SELECT start_date, cycle_length, period_length, irregular FROM cycles WHERE user_id = :user_id ORDER BY start_date ASC",
+        """
+        SELECT cycle_id, user_id, start_date, end_date, cycle_length, period_length, irregular, gap_type
+        FROM cycles
+        WHERE user_id = :user_id
+        ORDER BY start_date ASC
+        """,
         {"user_id": user_id}
     )
     
@@ -830,12 +862,10 @@ def get_analytics(current_user):
         if key in symptoms_freq:
             symptoms_freq[key] = row['count']
             
-    cycle_lengths = [c['cycle_length'] for c in cycles_db if c['cycle_length'] is not None]
-    period_lengths = [c['period_length'] for c in cycles_db if c['period_length'] is not None]
-    
-    avg_cycle = round(sum(cycle_lengths) / len(cycle_lengths), 1) if cycle_lengths else 28.0
-    avg_period = round(sum(period_lengths) / len(period_lengths), 1) if period_lengths else 5.0
-    irregular_count = sum(1 for c in cycles_db if c['irregular'])
+    metrics = calculate_cycle_analytics_metrics(cycles_db)
+    avg_cycle = metrics["average_cycle_length"]
+    avg_period = metrics["average_period_length"]
+    irregular_count = metrics["irregular_cycles_count"]
     
     insights = []
     if len(cycles_db) > 3:
@@ -856,6 +886,8 @@ def get_analytics(current_user):
     if not insights:
         insights.append("Logging daily helps build personalized wellness trends and emotional recommendations.")
 
+    wellbeing_patterns_data = get_user_wellbeing_insights(user_id)
+
     return jsonify({
         "average_cycle_length": avg_cycle,
         "average_period_length": avg_period,
@@ -865,19 +897,45 @@ def get_analytics(current_user):
         "mood_frequencies": moods_db,
         "symptoms_frequencies": symptoms_freq,
         "recent_trends": trends_db,
-        "insights": insights
+        "insights": insights,
+        "wellbeing_patterns": wellbeing_patterns_data
     }), 200
+
+# ==========================================
+# 7b. Clinical Reports & Doctor Visit Summary API
+# ==========================================
+
+@app.route('/api/reports/doctor-summary', methods=['GET'])
+@token_required
+def get_doctor_summary(current_user):
+    """
+    Generates a structured clinical visit summary strictly segregating:
+    1. Recorded Facts (patient-confirmed cycle dates, bleeding lengths, flow logs)
+    2. Statistical Estimates (average cycle length, prediction intervals, irregularity)
+    3. User-Reported Symptoms (subjective comfort, sleep hours, mood, notes)
+    Supports ?format=json (default) and ?format=html (printable clinical report).
+    """
+    user_id = current_user['user_id']
+    try:
+        summary_data = get_user_doctor_summary(user_id)
+        fmt = request.args.get('format', 'json').lower()
+        if fmt in ('html', 'print'):
+            html_content = render_doctor_summary_html(summary_data)
+            return Response(html_content, mimetype='text/html; charset=utf-8')
+        return jsonify(summary_data), 200
+    except Exception as e:
+        return jsonify({"error": "Failed to generate doctor summary"}), 500
 
 # ==========================================
 # 8. Admin Dashboard API (Secured & Anonymized)
 # ==========================================
 
 @app.route('/api/admin/stats', methods=['GET'])
-@token_required
+@admin_required
 def get_admin_stats(current_user):
     """
     Returns aggregate research and platform metrics.
-    Protected by authentication and anonymized: does NOT leak personal
+    Protected by admin authorization and anonymized: does NOT leak personal
     identifying details (emails, names, ages) or individual patient records.
     """
     total_users = execute_query("SELECT COUNT(*) as count FROM users")[0]['count']

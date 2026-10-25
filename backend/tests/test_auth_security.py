@@ -17,6 +17,7 @@ from app import (
     is_production_mode,
     generate_auth_token,
     verify_auth_token,
+    admin_required,
     DEV_FALLBACK_SECRET,
     auth_serializer,
 )
@@ -193,9 +194,10 @@ class TestAuthenticationMiddleware(unittest.TestCase):
     """Verifies @token_required decorator, header extraction, and endpoint protection."""
 
     def setUp(self):
+        from db import init_test_database, execute_write
+        init_test_database()
         app.config['TESTING'] = True
         self.client = app.test_client()
-        from db import execute_write
         execute_write(
             "INSERT OR IGNORE INTO users (user_id, username, email, password, age, lifestyle, has_pcos) "
             "VALUES (:uid, :name, :email, :pwd, 25, 'Active', 0)",
@@ -264,6 +266,89 @@ class TestAuthenticationMiddleware(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         data = response.get_json()
         self.assertIn("Forbidden", data.get("error", ""))
+
+
+class TestAdminEndpointAuthorization(unittest.TestCase):
+    """
+    Verifies role-based access control on /api/admin/stats:
+    - Missing, invalid, or expired tokens return 401.
+    - Standard authenticated users (role='member') return 403 Forbidden.
+    - Admin users (role='admin') receive 200 OK with expected platform metrics.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from db import init_test_database, execute_write
+        init_test_database()
+        app.config['TESTING'] = True
+        cls.client = app.test_client()
+
+        cls.member_id = "usr_test_member_auth"
+        cls.admin_id = "usr_test_admin_auth"
+
+        # Ensure clean state in isolated test database
+        execute_write("DELETE FROM users WHERE user_id IN (:mid, :aid)", {"mid": cls.member_id, "aid": cls.admin_id})
+
+        execute_write(
+            "INSERT INTO users (user_id, username, email, password, age, lifestyle, has_pcos, role) "
+            "VALUES (:uid, :name, :email, :pwd, 24, 'Active', 0, 'member')",
+            {"uid": cls.member_id, "name": "Standard Member", "email": "member_auth@test.local", "pwd": "hash"}
+        )
+        execute_write(
+            "INSERT INTO users (user_id, username, email, password, age, lifestyle, has_pcos, role) "
+            "VALUES (:uid, :name, :email, :pwd, 35, 'Moderate', 0, 'admin')",
+            {"uid": cls.admin_id, "name": "Administrator", "email": "admin_auth@test.local", "pwd": "hash"}
+        )
+
+        cls.member_token = generate_auth_token(cls.member_id)
+        cls.admin_token = generate_auth_token(cls.admin_id)
+
+    @classmethod
+    def tearDownClass(cls):
+        from db import execute_write
+        execute_write("DELETE FROM users WHERE user_id IN (:mid, :aid)", {"mid": cls.member_id, "aid": cls.admin_id})
+
+    def test_admin_stats_unauthenticated_returns_401(self):
+        """Unauthenticated GET /api/admin/stats must return 401 Unauthorized."""
+        response = self.client.get('/api/admin/stats')
+        self.assertEqual(response.status_code, 401)
+        data = response.get_json()
+        self.assertIn("Authorization token required", data.get("error", ""))
+
+    def test_admin_stats_invalid_token_returns_401(self):
+        """GET /api/admin/stats with an invalid token string must return 401."""
+        response = self.client.get('/api/admin/stats', headers={"Authorization": "Bearer invalid.token.value"})
+        self.assertEqual(response.status_code, 401)
+        data = response.get_json()
+        self.assertIn("Invalid or expired token", data.get("error", ""))
+
+    def test_admin_stats_expired_token_returns_401(self):
+        """GET /api/admin/stats with an expired admin token must return 401."""
+        with patch('app.DEFAULT_TOKEN_MAX_AGE', -1):
+            response = self.client.get('/api/admin/stats', headers={"Authorization": f"Bearer {self.admin_token}"})
+            self.assertEqual(response.status_code, 401)
+            data = response.get_json()
+            self.assertIn("Invalid or expired token", data.get("error", ""))
+
+    def test_admin_stats_standard_user_forbidden_403(self):
+        """Authenticated non-admin user must be rejected with 403 Forbidden."""
+        response = self.client.get('/api/admin/stats', headers={"Authorization": f"Bearer {self.member_token}"})
+        self.assertEqual(response.status_code, 403)
+        data = response.get_json()
+        self.assertIn("Administrator privileges required", data.get("error", ""))
+
+    def test_admin_stats_valid_admin_access_allowed_200(self):
+        """Authenticated admin user must receive 200 OK and aggregate statistics."""
+        response = self.client.get('/api/admin/stats', headers={"Authorization": f"Bearer {self.admin_token}"})
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertIn("total_users", data)
+        self.assertIn("total_cycles", data)
+        self.assertIn("total_logs", data)
+        self.assertIn("average_cycle_length", data)
+        self.assertIn("pcos_ratio_percentage", data)
+        self.assertIn("pcos_cycle_analysis", data)
+        self.assertIn("activity_cohorts", data)
 
 
 if __name__ == '__main__':
