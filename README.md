@@ -40,7 +40,7 @@ Traditional period trackers treat biology like a clock. For the roughly **1 in 1
 
 1. 🎯 **Uncertainty-aware prediction.** Forecasts come with confidence tiers and a plain-language reason, never a fake-precise date.
 2. 🧩 **Gap-aware history.** A forgotten logging month is not a medical irregularity, and the app asks the user instead of guessing.
-3. 🩺 **A clinically segregated doctor report.** Facts, statistical estimates, and subjective symptoms are never blended.
+3. 🩺 ** An overall health report.** Facts, statistical estimates, and subjective symptoms are never blended.
 4. 🛡️ **A safety-first RAG companion.** Emergencies are caught by deterministic rules *before* any LLM is called, and only verified citations are shown.
 
 ---
