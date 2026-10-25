@@ -2708,6 +2708,429 @@ function App() {
             {activeTab === 'companion' && (
               <Companion user={user} token={token} apiBase={API_BASE} />
             )}
+
+            {/* ==========================================
+                TAB: UNIFIED MY HEALTH REPORT
+                ========================================== */}
+            {activeTab === 'report' && (
+              <div className="space-y-5 sm:space-y-6 print-container animate-fade-in">
+                {/* 1. Report Action & Filter Bar (Hidden when printing) */}
+                <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-purple-100 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 no-print shadow-xs">
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                        <FileText size={18} />
+                      </div>
+                      <h2 className="text-base sm:text-lg font-bold text-textPrimary">My Health Report</h2>
+                      <span className="text-[10px] font-bold bg-primary/10 text-primary px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                        Doctor-Visit Ready
+                      </span>
+                    </div>
+                    <p className="text-xs text-textSecondary mt-1">
+                      Evidence-based clinical health summary separating facts, statistical models, and self-reported symptoms.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                    <button
+                      type="button"
+                      onClick={handlePrintHealthReport}
+                      className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-semibold shadow-soft hover:shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Printer size={14} />
+                      <span>Print / Save PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadHealthReportJson}
+                      disabled={!reportData}
+                      className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded-xl bg-white hover:bg-purple-50 text-slate-700 border border-purple-200 text-xs font-semibold shadow-xs transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      <Download size={14} />
+                      <span>Download JSON</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Date Filter & Presets Bar (Hidden when printing) */}
+                <div className="glass-panel p-4 rounded-2xl border border-purple-100/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 no-print text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-semibold text-textSecondary mr-1">Timeframe:</span>
+                    {[
+                      { key: 'all', label: 'All Records' },
+                      { key: '3m', label: 'Last 3 Months' },
+                      { key: '6m', label: 'Last 6 Months' },
+                      { key: '1y', label: 'Last 1 Year' },
+                      { key: 'custom', label: 'Custom' }
+                    ].map(p => (
+                      <button
+                        key={p.key}
+                        type="button"
+                        onClick={() => handleApplyReportPreset(p.key)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                          reportPreset === p.key
+                            ? 'bg-primary text-white shadow-xs'
+                            : 'bg-purple-50/70 text-textSecondary hover:bg-purple-100 hover:text-textPrimary'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {reportPreset === 'custom' && (
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                      <input
+                        type="date"
+                        value={reportStartDate}
+                        onChange={(e) => setReportStartDate(e.target.value)}
+                        className="px-2.5 py-1.5 rounded-xl border border-purple-200 text-xs bg-white text-textPrimary focus:ring-1 focus:ring-primary outline-none"
+                        aria-label="Start date"
+                      />
+                      <span className="text-textLight text-xs">to</span>
+                      <input
+                        type="date"
+                        value={reportEndDate}
+                        onChange={(e) => setReportEndDate(e.target.value)}
+                        className="px-2.5 py-1.5 rounded-xl border border-purple-200 text-xs bg-white text-textPrimary focus:ring-1 focus:ring-primary outline-none"
+                        aria-label="End date"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fetchHealthReport(reportStartDate, reportEndDate)}
+                        className="px-3 py-1.5 rounded-xl bg-purple-100 text-primary hover:bg-primary hover:text-white text-xs font-semibold transition cursor-pointer"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Loading State */}
+                {reportLoading && (
+                  <div className="glass-panel p-12 rounded-2xl text-center space-y-3">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-3 border-primary border-t-transparent"></div>
+                    <p className="text-xs text-textSecondary">Compiling evidence-based report categories...</p>
+                  </div>
+                )}
+
+                {/* Error State */}
+                {reportError && !reportLoading && (
+                  <div className="glass-panel p-6 rounded-2xl bg-rose-50/70 border border-rose-200 text-center space-y-2">
+                    <AlertCircle className="mx-auto text-rose-500" size={24} />
+                    <p className="text-xs font-semibold text-rose-800">{reportError}</p>
+                    <button
+                      type="button"
+                      onClick={() => fetchHealthReport(reportStartDate, reportEndDate)}
+                      className="px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+
+                {/* Report Content */}
+                {!reportLoading && !reportError && reportData && (
+                  <div className="space-y-5">
+                    {/* Patient Context & Metadata Header */}
+                    <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-purple-100 report-section">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        <div className="p-2.5 rounded-xl bg-purple-50/50">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Patient Name</span>
+                          <span className="font-bold text-textPrimary text-sm">
+                            {reportData.patient_context?.username || user?.username || 'Patient'}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-purple-50/50">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Age & Lifestyle</span>
+                          <span className="font-semibold text-textPrimary">
+                            {reportData.patient_context?.age ? `${reportData.patient_context.age} yrs` : 'Untracked'} • {reportData.patient_context?.lifestyle || 'Moderate'}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-purple-50/50">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Tracking Mode</span>
+                          <span className="font-semibold text-textPrimary">
+                            {reportData.patient_context?.tracking_mode || (user?.has_pcos ? 'PCOS-Aware Tracking' : 'Standard Tracking')}
+                          </span>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-purple-50/50">
+                          <span className="text-[10px] uppercase font-bold text-slate-500 block">Reporting Window</span>
+                          <span className="font-semibold text-textPrimary">
+                            {reportData.reporting_period?.label || 'All Available History'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Data Sufficiency Banner */}
+                      {reportData.report_overview?.data_sufficiency && (
+                        <div className={`mt-3 p-3 rounded-xl border flex items-start space-x-2 text-xs ${
+                          reportData.report_overview.data_sufficiency.status === 'sufficient'
+                            ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                            : 'bg-amber-50/80 border-amber-200 text-amber-900'
+                        }`}>
+                          <Info size={14} className="flex-shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold capitalize">{reportData.report_overview.data_sufficiency.status} History: </span>
+                            <span>{reportData.report_overview.data_sufficiency.message}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Non-Diagnostic Clinical Notice */}
+                    <div className="p-3.5 bg-amber-50/80 rounded-2xl border border-amber-200/80 text-xs text-amber-900 leading-relaxed flex items-start space-x-2 report-section">
+                      <Info size={15} className="text-amber-700 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="font-bold">Clinical Care Notice: </strong>
+                        {reportData.clinical_disclaimer || "This report strictly separates objective recorded dates from mathematical estimates and self-reported symptoms to facilitate informed healthcare consultations. It does not provide medical diagnoses or replace physician judgment."}
+                      </div>
+                    </div>
+
+                    {/* Category 1: Recorded Facts */}
+                    <div className="rounded-2xl border border-emerald-200 bg-white/90 overflow-hidden shadow-xs report-section">
+                      <div className="px-4 py-3 bg-emerald-100/70 text-emerald-900 flex justify-between items-center report-section-header">
+                        <div className="flex items-center space-x-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                          <span className="font-bold text-xs uppercase tracking-wider">Category 1 — Recorded Facts</span>
+                        </div>
+                        <span className="text-[11px] font-bold bg-emerald-200/80 px-2.5 py-0.5 rounded-full">
+                          {reportData.category_1_recorded_facts?.total_cycles_recorded || 0} cycles logged
+                        </span>
+                      </div>
+                      <div className="p-4 sm:p-5 space-y-4">
+                        <p className="text-xs text-emerald-950 leading-relaxed">
+                          {reportData.category_1_recorded_facts?.description || "Patient-logged menstrual cycle start and end dates with verified bleeding lengths and flow observations."}
+                        </p>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b border-emerald-200 text-[10px] uppercase text-emerald-800">
+                                <th className="pb-2 font-bold">Start Date</th>
+                                <th className="pb-2 font-bold">End Date</th>
+                                <th className="pb-2 font-bold">Cycle Length</th>
+                                <th className="pb-2 font-bold">Period Length</th>
+                                <th className="pb-2 font-bold">Pattern Status</th>
+                                <th className="pb-2 font-bold">Interval Note</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-emerald-100 text-slate-700">
+                              {(reportData.category_1_recorded_facts?.cycles || []).map((c, idx) => (
+                                <tr key={idx} className="hover:bg-emerald-50/40 transition">
+                                  <td className="py-2 font-medium">{c.start_date || '—'}</td>
+                                  <td className="py-2">{c.end_date || '—'}</td>
+                                  <td className="py-2 font-semibold text-emerald-900">
+                                    {c.recorded_cycle_length ? `${c.recorded_cycle_length} days` : '—'}
+                                  </td>
+                                  <td className="py-2">{c.recorded_period_length ? `${c.recorded_period_length} days` : '—'}</td>
+                                  <td className="py-2">
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                                      c.is_irregular
+                                        ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                        : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                    }`}>
+                                      {c.is_irregular ? 'Irregular' : 'Regular'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 text-[11px] text-slate-500">{c.gap_clarification || 'None'}</td>
+                                </tr>
+                              ))}
+                              {(!reportData.category_1_recorded_facts?.cycles || reportData.category_1_recorded_facts.cycles.length === 0) && (
+                                <tr>
+                                  <td colSpan="6" className="py-4 text-center text-slate-400 italic">No cycle onset dates recorded in this reporting period.</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Flow distribution badges */}
+                        {reportData.category_1_recorded_facts?.menstrual_flow_records?.flow_distribution && (
+                          <div className="pt-3 border-t border-emerald-100 flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-bold text-emerald-900 uppercase">Menstrual Flow Days Logged:</span>
+                            {Object.entries(reportData.category_1_recorded_facts.menstrual_flow_records.flow_distribution).map(([k, v]) => (
+                              <span key={k} className="text-xs bg-white px-2.5 py-1 rounded-xl border border-emerald-200 text-slate-700 font-medium">
+                                <strong className="text-emerald-900">{k}:</strong> {v} days
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Category 2: Statistical Estimates */}
+                    <div className="rounded-2xl border border-purple-200 bg-white/90 overflow-hidden shadow-xs report-section">
+                      <div className="px-4 py-3 bg-purple-100/70 text-purple-900 flex justify-between items-center report-section-header">
+                        <div className="flex items-center space-x-2">
+                          <span className="w-2 h-2 rounded-full bg-primary"></span>
+                          <span className="font-bold text-xs uppercase tracking-wider">Category 2 — Statistical Estimates & Projections</span>
+                        </div>
+                        <span className="text-[11px] font-bold bg-purple-200/80 px-2.5 py-0.5 rounded-full">
+                          Algorithmic Projections
+                        </span>
+                      </div>
+                      <div className="p-4 sm:p-5 space-y-4">
+                        <p className="text-xs text-purple-950 leading-relaxed">
+                          {reportData.category_2_statistical_estimates?.description || "Calculated statistical metrics derived from your historical cycle frequency. Distinct from laboratory diagnostic testing."}
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="p-3.5 bg-purple-50/50 rounded-xl border border-purple-100">
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Average Cycle Length</span>
+                            <span className="text-lg font-bold text-primary">
+                              {reportData.category_2_statistical_estimates?.average_cycle_length_days ? `${reportData.category_2_statistical_estimates.average_cycle_length_days} days` : 'Pending data'}
+                            </span>
+                          </div>
+                          <div className="p-3.5 bg-purple-50/50 rounded-xl border border-purple-100">
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Average Period Length</span>
+                            <span className="text-lg font-bold text-primary">
+                              {reportData.category_2_statistical_estimates?.average_period_length_days ? `${reportData.category_2_statistical_estimates.average_period_length_days} days` : 'Pending data'}
+                            </span>
+                          </div>
+                          <div className="p-3.5 bg-purple-50/50 rounded-xl border border-purple-100">
+                            <span className="text-[10px] uppercase font-bold text-slate-500 block">Next Estimated Period</span>
+                            <span className="text-lg font-bold text-primary">
+                              {reportData.category_2_statistical_estimates?.predicted_next_cycle?.estimated_next_start_date || 'Pending records'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-xs text-slate-700 bg-purple-50/30 p-3 rounded-xl border border-purple-100/60">
+                          <strong>Regularity Assessment: </strong>
+                          <span>{reportData.category_2_statistical_estimates?.regularity_assessment || 'Evaluating cycle consistency'}</span>
+                          {reportData.category_2_statistical_estimates?.methodology_note && (
+                            <p className="text-[11px] text-slate-500 italic mt-1">
+                              * {reportData.category_2_statistical_estimates.methodology_note}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Category 3: User-Reported Symptoms & Notes */}
+                    <div className="rounded-2xl border border-rose-200 bg-white/90 overflow-hidden shadow-xs report-section">
+                      <div className="px-4 py-3 bg-rose-100/70 text-rose-900 flex justify-between items-center report-section-header">
+                        <div className="flex items-center space-x-2">
+                          <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                          <span className="font-bold text-xs uppercase tracking-wider">Category 3 — User-Reported Symptoms & Notes</span>
+                        </div>
+                        <span className="text-[11px] font-bold bg-rose-200/80 px-2.5 py-0.5 rounded-full">
+                          {reportData.category_3_user_reported_symptoms?.total_days_logged || 0} days logged
+                        </span>
+                      </div>
+                      <div className="p-4 sm:p-5 space-y-4">
+                        <p className="text-xs text-rose-950 leading-relaxed">
+                          {reportData.category_3_user_reported_symptoms?.description || "Patient self-reported physical comfort, mood, energy, sleep hours, and personal reflective notes."}
+                        </p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                          {/* Cramps Reported */}
+                          <div className="p-3 bg-rose-50/40 rounded-xl border border-rose-100">
+                            <strong className="text-[11px] text-rose-950 block mb-1.5">Cramps Reported:</strong>
+                            <div className="flex flex-wrap gap-1 text-[10px]">
+                              {Object.entries(reportData.category_3_user_reported_symptoms?.symptom_frequency_breakdown?.cramps || {}).map(([k, v]) => (
+                                <span key={k} className="bg-white px-2 py-0.5 rounded-md border border-rose-200 text-slate-700">
+                                  {k}: {v}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Fatigue Reported */}
+                          <div className="p-3 bg-rose-50/40 rounded-xl border border-rose-100">
+                            <strong className="text-[11px] text-rose-950 block mb-1.5">Fatigue Reported:</strong>
+                            <div className="flex flex-wrap gap-1 text-[10px]">
+                              {Object.entries(reportData.category_3_user_reported_symptoms?.symptom_frequency_breakdown?.fatigue || {}).map(([k, v]) => (
+                                <span key={k} className="bg-white px-2 py-0.5 rounded-md border border-rose-200 text-slate-700">
+                                  {k}: {v}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Energy Levels Reported */}
+                          <div className="p-3 bg-rose-50/40 rounded-xl border border-rose-100">
+                            <strong className="text-[11px] text-rose-950 block mb-1.5">Energy Levels:</strong>
+                            <div className="flex flex-wrap gap-1 text-[10px]">
+                              {Object.entries(reportData.category_3_user_reported_symptoms?.symptom_frequency_breakdown?.energy_levels || {}).map(([k, v]) => (
+                                <span key={k} className="bg-white px-2 py-0.5 rounded-md border border-rose-200 text-slate-700">
+                                  {k}: {v}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Sleep Average */}
+                          <div className="p-3 bg-rose-50/40 rounded-xl border border-rose-100">
+                            <strong className="text-[11px] text-rose-950 block mb-1.5">Sleep Hours:</strong>
+                            <div className="text-xs text-slate-800 font-semibold">
+                              {reportData.category_3_user_reported_symptoms?.symptom_frequency_breakdown?.sleep_hours_summary?.average_hours_per_night
+                                ? `${reportData.category_3_user_reported_symptoms.symptom_frequency_breakdown.sleep_hours_summary.average_hours_per_night} hrs/night avg`
+                                : 'Untracked'}
+                            </div>
+                            <span className="text-[10px] text-slate-500 mt-1 block">
+                              {reportData.category_3_user_reported_symptoms?.symptom_frequency_breakdown?.sleep_hours_summary?.recorded_days || 0} days recorded
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Evidence-Supported Longitudinal Patterns */}
+                        {(reportData.category_3_user_reported_symptoms?.observed_longitudinal_patterns || []).length > 0 && (
+                          <div className="space-y-2 pt-3 border-t border-rose-100">
+                            <span className="text-[10px] font-bold text-rose-900 uppercase block tracking-wider">
+                              Evidence-Supported Longitudinal Patterns:
+                            </span>
+                            <div className="space-y-2">
+                              {reportData.category_3_user_reported_symptoms.observed_longitudinal_patterns.map((p, idx) => (
+                                <div key={idx} className="p-3 bg-rose-50/30 rounded-xl border border-rose-100 text-xs">
+                                  <span className="font-bold text-primary">{p.pattern_title}: </span>
+                                  <span className="text-slate-700">{p.observation}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Recent Patient Notes */}
+                        {(reportData.category_3_user_reported_symptoms?.recent_patient_notes || []).length > 0 && (
+                          <div className="space-y-2 pt-3 border-t border-rose-100">
+                            <span className="text-[10px] font-bold text-rose-900 uppercase block tracking-wider">
+                              Recent Self-Care & Patient Notes:
+                            </span>
+                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                              {reportData.category_3_user_reported_symptoms.recent_patient_notes.map((n, idx) => (
+                                <div key={idx} className="p-2.5 rounded-xl bg-purple-50/40 border border-purple-100/60 text-xs">
+                                  <div className="flex items-center justify-between text-[10px] text-textLight mb-0.5">
+                                    <span className="font-semibold text-textSecondary">{n.date}</span>
+                                    {n.cycle_day && <span>Cycle Day {n.cycle_day}</span>}
+                                  </div>
+                                  <p className="text-slate-700 italic">"{n.note}"</p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Clinical Safety Guidance & Red-Flag Warnings */}
+                    <div className="p-4 sm:p-5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-2 report-section">
+                      <span className="font-bold text-amber-950 uppercase tracking-wider text-[11px] block">
+                        Clinical Safety Guidance & Red-Flag Indicators:
+                      </span>
+                      <ul className="list-disc list-inside space-y-1.5 text-xs text-amber-900/90 leading-relaxed">
+                        {(reportData.safety_guidance || [
+                          "Acute severe pelvic, lower back, or abdominal pain — particularly if sudden or accompanied by dizziness or fever — warrants immediate medical evaluation.",
+                          "Abnormally heavy menstrual bleeding (e.g., soaking through one or more pads/tampons every hour for two consecutive hours) should be evaluated promptly.",
+                          "Cycle irregularities (persistently shorter than 21 days, longer than 35 days, or absent for more than 90 days) should be investigated by a physician.",
+                          "OvaCare AI is an assistive self-tracking platform and does not provide medical diagnoses or replace physician care."
+                        ]).map((s, idx) => (
+                          <li key={idx}>{s}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </main>
