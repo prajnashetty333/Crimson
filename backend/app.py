@@ -979,10 +979,13 @@ def get_admin_stats(current_user):
     }), 200
 
 # ==========================================
-# Community Module Blueprint Registration
+# Community & Companion Blueprint Registrations
 # ==========================================
 from community import community_bp
 app.register_blueprint(community_bp, url_prefix='/api/community')
+
+from companion import companion_bp
+app.register_blueprint(companion_bp, url_prefix='/api/companion')
 
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))

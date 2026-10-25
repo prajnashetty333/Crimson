@@ -6,5 +6,6 @@ cryptography==42.0.7
 pandas>=2.2.3
 faker==25.2.0
 numpy>=2.0.0
+requests>=2.31.0
 
 python-dotenv==1.0.1
