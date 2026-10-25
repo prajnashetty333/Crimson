@@ -66,6 +66,12 @@ def resolve_database_url():
             )
         return f"sqlite:///{demo_path}"
 
+    raw_db_url = os.getenv("DATABASE_URL", "").strip()
+    if raw_db_url:
+        if raw_db_url.startswith("postgres://"):
+            raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+        return raw_db_url
+
     MYSQL_USER = os.getenv("MYSQL_USER", "")
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
     MYSQL_HOST = os.getenv("MYSQL_HOST", "")

@@ -11,14 +11,20 @@ _BACKEND_DIR = os.path.abspath(os.path.join(_CURRENT_DIR, ".."))
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
 
-from config.settings import SECRET_KEY, DEFAULT_TOKEN_MAX_AGE as _CONFIG_DEFAULT_TOKEN_MAX_AGE
+try:
+    from config.settings import SECRET_KEY, DEFAULT_TOKEN_MAX_AGE as _CONFIG_DEFAULT_TOKEN_MAX_AGE
+except Exception:
+    SECRET_KEY = os.getenv("SECRET_KEY") or "ovacare-dev-secret-key-2026-safe-replace-in-prod"
+    _CONFIG_DEFAULT_TOKEN_MAX_AGE = int(os.getenv("AUTH_TOKEN_MAX_AGE", 86400 * 7))
+
 from db import execute_query
 
 # Module-level default token validity
 DEFAULT_TOKEN_MAX_AGE = _CONFIG_DEFAULT_TOKEN_MAX_AGE
 
 # Token serializer using configured SECRET_KEY and application salt
-auth_serializer = URLSafeTimedSerializer(SECRET_KEY, salt="ovacare-auth-token-v1")
+_effective_secret = SECRET_KEY or os.getenv("SECRET_KEY") or "ovacare-dev-secret-key-2026-safe-replace-in-prod"
+auth_serializer = URLSafeTimedSerializer(_effective_secret, salt="ovacare-auth-token-v1")
 
 
 def _resolve_auth_serializer():

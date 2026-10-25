@@ -16,6 +16,14 @@ class TestCompanionModule(unittest.TestCase):
     def setUp(self):
         app.config['TESTING'] = True
         self.client = app.test_client()
+        self.env_patcher = patch.dict(os.environ, {
+            "CLOUDFLARE_ACCOUNT_ID": "test_mock_account",
+            "CLOUDFLARE_API_TOKEN": "test_mock_token"
+        })
+        self.env_patcher.start()
+
+    def tearDown(self):
+        self.env_patcher.stop()
 
     def test_companion_status_endpoint(self):
         """Companion status endpoint returns readiness without exposing secrets."""
@@ -105,13 +113,17 @@ class TestCompanionModule(unittest.TestCase):
 
     @patch('companion.requests.post')
     def test_companion_chat_cloudflare_timeout(self, mock_post):
-        """Handles timeout from Cloudflare API with 504."""
+        """Defaults safely to Deterministic Clinical RAG Engine when Cloudflare times out."""
         import requests
         mock_post.side_effect = requests.exceptions.Timeout("Read timeout")
 
         res = self.client.post('/api/companion/chat', json={"message": "Help with cramps"})
-        self.assertEqual(res.status_code, 504)
-        self.assertIn("too long", res.get_json()["error"].lower())
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertIn("response", data)
+        self.assertEqual(data["model"], "OvaCare-Clinical-RAG-v1")
+        self.assertTrue(data.get("fallback"))
 
     @patch('companion.requests.post')
     def test_companion_chat_structured_json_response(self, mock_post):

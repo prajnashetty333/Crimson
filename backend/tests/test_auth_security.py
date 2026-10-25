@@ -48,6 +48,13 @@ class TestSecretKeyConfiguration(unittest.TestCase):
             key = load_secret_key()
             self.assertEqual(key, "my-local-test-secret")
 
+    def test_staging_mode_permits_fallback_secret(self):
+        """APP_ENV=staging permits fallback without failing startup."""
+        with patch.dict(os.environ, {"APP_ENV": "staging"}, clear=True):
+            self.assertFalse(is_production_mode())
+            key = load_secret_key()
+            self.assertEqual(key, DEV_FALLBACK_SECRET)
+
     # ------------------------------------------------------------------
     # Scenario 2: Production mode — missing or weak secret must be rejected
     # ------------------------------------------------------------------

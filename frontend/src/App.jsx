@@ -63,7 +63,28 @@ ChartJS.register(
   ArcElement
 );
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api';
+const resolveApiBase = () => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
+    let clean = envUrl.trim().replace(/\/+$/, '');
+    if (!clean.endsWith('/api')) {
+      clean = `${clean}/api`;
+    }
+    return clean;
+  }
+  // When running in a deployed browser (e.g. hosted on Vercel)
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    if (window.__OVACARE_API_BASE__) {
+      return window.__OVACARE_API_BASE__;
+    }
+    // Default to relative /api when hosted without an explicit environment variable
+    return '/api';
+  }
+  // Local development default (connecting to local Flask backend)
+  return 'http://127.0.0.1:5000/api';
+};
+
+const API_BASE = resolveApiBase();
 
 function App() {
   // Navigation & Auth States
@@ -2633,6 +2654,11 @@ function App() {
             {/* Community Module Tab */}
             {activeTab === 'community' && (
               <Community user={user} token={token} apiBase={API_BASE} />
+            )}
+
+            {/* 3D AI Companion Module Tab */}
+            {activeTab === 'companion' && (
+              <Companion user={user} token={token} apiBase={API_BASE} />
             )}
           </>
         )}

@@ -411,7 +411,13 @@ export default function Companion({ user, token, apiBase }) {
         })
       });
 
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        data = { error: `Server response error (${res.status}). Please try again in a moment.` };
+      }
+
       if (!res.ok) {
         throw new Error(data.error || 'Failed to receive reply from companion.');
       }

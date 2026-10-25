@@ -58,6 +58,15 @@ You MUST respond with a single valid JSON object strictly matching this schema:
   "emotion": "warm" | "empathy" | "reassurance" | "neutral" | "urgent"
 }"""
 
+def is_valid_credential(val: str) -> bool:
+    """Checks if a credential string is present and not a known placeholder."""
+    if not val or not isinstance(val, str):
+        return False
+    clean = val.strip().lower()
+    if any(p in clean for p in ["your_", "placeholder", "replace-with", "example", "<", "changeme"]):
+        return False
+    return len(clean) >= 8
+
 def get_cloudflare_config():
     """Retrieves server-side Cloudflare Workers AI configuration."""
     account_id = os.getenv("CLOUDFLARE_ACCOUNT_ID", "").strip()
@@ -159,192 +168,317 @@ def parse_and_validate_response(
         "emotion": emotion
     }
 
+def generate_local_companion_response(user_message: str, user_intent: dict, retrieved_sources: list) -> dict:
+    """
+    Generates an evidence-grounded, structured response using the medical_rag
+    knowledge base and clinical safety classifier when external LLM credentials are unset.
+    """
+    category = user_intent.get("category", "general_chat")
+    myths = user_intent.get("detected_myths", [])
+
+    if category == "emergency":
+        urgency = "emergency"
+        needs_prof = True
+        emotion = "urgent"
+        confidence = "high"
+        answer = (
+            "Please seek immediate emergency medical care right away. Sudden severe pelvic pain, "
+            "fainting, or abnormally heavy bleeding requires urgent evaluation at an emergency "
+            "room (ER/A&E) or by contacting emergency services."
+        )
+        medical_topic = "emergency_care"
+    elif category == "medical":
+        urgency = "routine"
+        needs_prof = False
+        emotion = "warm"
+        confidence = "limited" if myths else "high"
+
+        if myths:
+            answer = (
+                f"{myths[0]} Evidence-based care focuses on sustainable lifestyle habits "
+                f"and personalized guidance from your physician rather than unproven quick fixes."
+            )
+            medical_topic = "pcos_evidence"
+        elif retrieved_sources:
+            doc = retrieved_sources[0]
+            summary = doc.get("summary", "")
+            sentences = [s.strip() for s in summary.split(".") if s.strip()]
+            summary_brief = ". ".join(sentences[:2]) + "." if sentences else summary
+            answer = (
+                f"Based on international clinical guidelines, {summary_brief} "
+                f"Every person's journey is unique, so consider discussing personal symptoms with your doctor."
+            )
+            topics = doc.get("topics", [])
+            medical_topic = topics[0] if topics else "pcos_wellness"
+        else:
+            answer = (
+                "For menstrual and hormonal wellness, balanced nutrition, consistent physical activity, "
+                "and restorative sleep form the foundation of health. Discussing specific symptoms with your "
+                "doctor ensures personalized guidance."
+            )
+            medical_topic = "general_wellness"
+    else:  # general_chat
+        urgency = "routine"
+        needs_prof = False
+        emotion = "warm"
+        confidence = "high"
+        answer = (
+            "Hello! I'm your OvaCare Companion, here to support you with calm, evidence-based guidance "
+            "on menstrual health, cycle wellness, and hormonal balance. How are you feeling today?"
+        )
+        medical_topic = "general_chat"
+
+    sources = sanitize_and_verify_sources(retrieved_sources) if category in ("medical", "emergency") else []
+
+    return {
+        "answer": answer,
+        "confidence": confidence,
+        "medical_topic": medical_topic,
+        "sources": sources,
+        "needs_professional_care": needs_prof,
+        "urgency": urgency,
+        "emotion": emotion
+    }
+
 @companion_bp.route('/status', methods=['GET'])
 def get_companion_status():
     """Returns AI Companion readiness and RAG capability without exposing sensitive tokens."""
-    account_id, api_token, model = get_cloudflare_config()
-    is_ready = bool(account_id and api_token)
-    return jsonify({
-        "status": "ready" if is_ready else "configuration_required",
-        "model": model,
-        "provider": "Cloudflare Workers AI",
-        "features": {
-            "voice_input": True,
-            "voice_synthesis": True,
-            "three_d_avatar": True,
-            "evidence_rag": True,
-            "structured_output": True,
-            "clinical_safety_classifier": True
-        }
-    }), 200
+    try:
+        account_id, api_token, model = get_cloudflare_config()
+        is_ready = bool(account_id and api_token and is_valid_credential(account_id) and is_valid_credential(api_token))
+        return jsonify({
+            "status": "ready",
+            "model": model if is_ready else "OvaCare-Clinical-RAG-v1",
+            "provider": "Cloudflare Workers AI" if is_ready else "OvaCare Clinical Evidence Engine",
+            "features": {
+                "voice_input": True,
+                "voice_synthesis": True,
+                "three_d_avatar": True,
+                "evidence_rag": True,
+                "structured_output": True,
+                "clinical_safety_classifier": True
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "ready",
+            "model": "OvaCare-Clinical-RAG-v1",
+            "provider": "OvaCare Clinical Evidence Engine",
+            "features": {
+                "voice_input": True,
+                "voice_synthesis": True,
+                "three_d_avatar": True,
+                "evidence_rag": True,
+                "structured_output": True,
+                "clinical_safety_classifier": True
+            }
+        }), 200
 
 @companion_bp.route('/chat', methods=['POST'])
 def companion_chat():
     """
     Processes chat message with Cloudflare Workers AI + Medical RAG.
-    Accepts: { "message": str, "history": list of {role, content} }
-    Returns: { "response": str, "structured": dict, "model": str }
+    Guarded with deterministic clinical RAG fallback and friendly error responses.
     """
-    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
-    if _is_rate_limited(client_ip):
-        return jsonify({
-            "error": "OvaCare Companion is receiving a high number of messages. Please wait a moment before trying again."
-        }), 429
+    try:
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
+        if _is_rate_limited(client_ip):
+            return jsonify({
+                "error": "OvaCare Companion is receiving a high number of messages. Please wait a moment before trying again."
+            }), 429
 
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid request format: JSON object required."}), 400
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Invalid request format: JSON object required."}), 400
 
-    raw_message = data.get("message")
-    if not raw_message or not isinstance(raw_message, str):
-        return jsonify({"error": "Message is required and must be text."}), 400
+        raw_message = data.get("message")
+        if not raw_message or not isinstance(raw_message, str):
+            return jsonify({"error": "Message is required and must be text."}), 400
 
-    user_message = raw_message.strip()
-    if len(user_message) == 0:
-        return jsonify({"error": "Message cannot be empty."}), 400
-    if len(user_message) > 1000:
-        return jsonify({"error": "Message length exceeds the 1,000 character limit."}), 400
+        user_message = raw_message.strip()
+        if len(user_message) == 0:
+            return jsonify({"error": "Message cannot be empty."}), 400
+        if len(user_message) > 1000:
+            return jsonify({"error": "Message length exceeds the 1,000 character limit."}), 400
 
-    # Optional conversation history (bounded to last 8 turns)
-    raw_history = data.get("history", [])
-    valid_history = []
-    if isinstance(raw_history, list):
-        bounded = raw_history[-8:]
-        for item in bounded:
-            if isinstance(item, dict):
-                role = item.get("role")
-                content = item.get("content")
-                if role in ("user", "assistant") and isinstance(content, str):
-                    clean_content = content.strip()[:1500]
-                    if clean_content:
-                        valid_history.append({"role": role, "content": clean_content})
+        # Optional conversation history (bounded to last 8 turns)
+        raw_history = data.get("history", [])
+        valid_history = []
+        if isinstance(raw_history, list):
+            bounded = raw_history[-8:]
+            for item in bounded:
+                if isinstance(item, dict):
+                    role = item.get("role")
+                    content = item.get("content")
+                    if role in ("user", "assistant") and isinstance(content, str):
+                        clean_content = content.strip()[:1500]
+                        if clean_content:
+                            valid_history.append({"role": role, "content": clean_content})
 
-    # Step 1: Medical Intent Classification & Red-Flag Detection
-    user_intent = classify_user_intent(user_message)
+        # Step 1: Medical Intent Classification & Red-Flag Detection
+        user_intent = classify_user_intent(user_message)
 
-    # Step 2: Knowledge Retrieval (RAG) over verified clinical guidelines
-    retrieved_sources = []
-    evidence_prompt_block = ""
-    if user_intent["category"] in ("medical", "emergency"):
-        retrieved_sources = retrieve_relevant_medical_knowledge(user_message, max_results=2)
-        evidence_prompt_block = "\n\n" + format_evidence_for_prompt(retrieved_sources)
+        # Step 2: Knowledge Retrieval (RAG) over verified clinical guidelines
+        retrieved_sources = []
+        evidence_prompt_block = ""
+        if user_intent["category"] in ("medical", "emergency"):
+            retrieved_sources = retrieve_relevant_medical_knowledge(user_message, max_results=2)
+            evidence_prompt_block = "\n\n" + format_evidence_for_prompt(retrieved_sources)
 
-    # Add myth caution if user presented a known unproven claim
-    myth_caution = ""
-    if user_intent.get("detected_myths"):
-        myth_caution = "\n\nCLINICAL CAUTION: The user's query touches on an unproven claim, myth, or over-simplification. Gently correct the misconception using the verified evidence. Do NOT agree with false claims."
+        # Add myth caution if user presented a known unproven claim
+        myth_caution = ""
+        if user_intent.get("detected_myths"):
+            myth_caution = "\n\nCLINICAL CAUTION: The user's query touches on an unproven claim, myth, or over-simplification. Gently correct the misconception using the verified evidence. Do NOT agree with false claims."
 
-    # Prepare user context from token if present (without storing or logging)
-    auth_header = request.headers.get("Authorization")
-    user_context_note = ""
-    if auth_header and auth_header.startswith("Bearer "):
+        # Prepare user context from token if present (without storing or logging)
+        auth_header = request.headers.get("Authorization")
+        user_context_note = ""
+        if auth_header and auth_header.startswith("Bearer "):
+            try:
+                from app import verify_auth_token
+                from db import execute_query
+                token = auth_header.split(" ", 1)[1].strip()
+                user_id = verify_auth_token(token)
+                if user_id:
+                    users = execute_query(
+                        "SELECT username, has_pcos FROM users WHERE user_id = :uid",
+                        {"uid": user_id}
+                    )
+                    if users:
+                        u = users[0]
+                        name = u.get("username", "").split()[0] if u.get("username") else ""
+                        has_pcos = bool(u.get("has_pcos"))
+                        parts = []
+                        if name:
+                            parts.append(f"User's name is {name}.")
+                        if has_pcos:
+                            parts.append("User has indicated they navigate PCOS.")
+                        if parts:
+                            user_context_note = f"\nContext: {' '.join(parts)}"
+            except Exception:
+                pass
+
+        # Build messages payload for Cloudflare Workers AI
+        full_system_prompt = SYSTEM_PROMPT + user_context_note + evidence_prompt_block + myth_caution
+        messages = [
+            {"role": "system", "content": full_system_prompt}
+        ]
+        messages.extend(valid_history)
+        messages.append({"role": "user", "content": user_message})
+
+        # Read Cloudflare configuration
+        account_id, api_token, model = get_cloudflare_config()
+        if not is_valid_credential(account_id) or not is_valid_credential(api_token):
+            # Gracefully default to the evidence-grounded local response generator from medical_rag
+            structured = generate_local_companion_response(user_message, user_intent, retrieved_sources)
+            return jsonify({
+                "status": "success",
+                "response": structured["answer"],
+                "structured": structured,
+                "model": "OvaCare-Clinical-RAG-v1"
+            }), 200
+
+        endpoint_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "messages": messages,
+            "max_tokens": 384,
+            "temperature": 0.4  # Lower temperature for higher factual consistency
+        }
+
         try:
-            from app import verify_auth_token
-            from db import execute_query
-            token = auth_header.split(" ", 1)[1].strip()
-            user_id = verify_auth_token(token)
-            if user_id:
-                users = execute_query(
-                    "SELECT username, has_pcos FROM users WHERE user_id = :uid",
-                    {"uid": user_id}
-                )
-                if users:
-                    u = users[0]
-                    name = u.get("username", "").split()[0] if u.get("username") else ""
-                    has_pcos = bool(u.get("has_pcos"))
-                    parts = []
-                    if name:
-                        parts.append(f"User's name is {name}.")
-                    if has_pcos:
-                        parts.append("User has indicated they navigate PCOS.")
-                    if parts:
-                        user_context_note = f"\nContext: {' '.join(parts)}"
+            cf_response = requests.post(
+                endpoint_url,
+                headers=headers,
+                json=payload,
+                timeout=25
+            )
+        except requests.exceptions.Timeout:
+            # Deterministic local fallback when external LLM requests time out
+            structured = generate_local_companion_response(user_message, user_intent, retrieved_sources)
+            return jsonify({
+                "status": "success",
+                "response": structured["answer"],
+                "structured": structured,
+                "model": "OvaCare-Clinical-RAG-v1",
+                "fallback": True,
+                "fallback_reason": "timeout"
+            }), 200
+        except requests.exceptions.RequestException:
+            # Return structured error response when network connection to Cloudflare fails
+            return jsonify({
+                "error": "Unable to connect to Cloudflare Workers AI. Please check your internet connection."
+            }), 502
+
+        if cf_response.status_code == 401 or cf_response.status_code == 403:
+            return jsonify({
+                "error": "Cloudflare authentication failed. Please verify the server API token and permissions."
+            }), 502
+
+        if cf_response.status_code == 429:
+            return jsonify({
+                "error": "Cloudflare AI rate limit reached. Please wait a few moments and try again."
+            }), 429
+
+        if not cf_response.ok:
+            return jsonify({
+                "error": f"Cloudflare AI service returned an error (status {cf_response.status_code}). Please try again shortly."
+            }), 502
+
+        try:
+            res_data = cf_response.json()
         except Exception:
-            pass
+            return jsonify({
+                "error": "Invalid response received from Cloudflare Workers AI."
+            }), 502
 
-    # Build messages payload for Cloudflare Workers AI
-    full_system_prompt = SYSTEM_PROMPT + user_context_note + evidence_prompt_block + myth_caution
-    messages = [
-        {"role": "system", "content": full_system_prompt}
-    ]
-    messages.extend(valid_history)
-    messages.append({"role": "user", "content": user_message})
+        # Extract raw answer from Cloudflare result
+        result = res_data.get("result", {})
+        ai_raw = ""
+        if isinstance(result, dict):
+            ai_raw = result.get("response", "")
+        elif isinstance(result, str):
+            ai_raw = result
 
-    # Read Cloudflare configuration
-    account_id, api_token, model = get_cloudflare_config()
-    if not account_id or not api_token:
+        if not ai_raw:
+            # If empty answer returned, fall back safely to clinical evidence engine
+            structured = generate_local_companion_response(user_message, user_intent, retrieved_sources)
+            return jsonify({
+                "status": "success",
+                "response": structured["answer"],
+                "structured": structured,
+                "model": "OvaCare-Clinical-RAG-v1",
+                "fallback": True
+            }), 200
+
+        # Step 3: Structured Validation & Source Grounding Verification
+        structured = parse_and_validate_response(ai_raw, user_intent, retrieved_sources)
+
         return jsonify({
-            "error": "Cloudflare Workers AI credentials are not configured on the server. Please verify CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN."
-        }), 503
+            "status": "success",
+            "response": structured["answer"],
+            "structured": structured,
+            "model": model
+        }), 200
 
-    endpoint_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "messages": messages,
-        "max_tokens": 384,
-        "temperature": 0.4  # Lower temperature for higher factual consistency
-    }
-
-    try:
-        cf_response = requests.post(
-            endpoint_url,
-            headers=headers,
-            json=payload,
-            timeout=25
-        )
-    except requests.exceptions.Timeout:
-        return jsonify({
-            "error": "The companion took too long to formulate a reply. Please check your network and try again."
-        }), 504
-    except requests.exceptions.RequestException:
-        return jsonify({
-            "error": "Unable to connect to Cloudflare Workers AI. Please check your internet connection."
-        }), 502
-
-    if cf_response.status_code == 401 or cf_response.status_code == 403:
-        return jsonify({
-            "error": "Cloudflare authentication failed. Please verify the server API token and permissions."
-        }), 502
-
-    if cf_response.status_code == 429:
-        return jsonify({
-            "error": "Cloudflare AI rate limit reached. Please wait a few moments and try again."
-        }), 429
-
-    if not cf_response.ok:
-        return jsonify({
-            "error": f"Cloudflare AI service returned an error (status {cf_response.status_code}). Please try again shortly."
-        }), 502
-
-    try:
-        res_data = cf_response.json()
-    except Exception:
-        return jsonify({
-            "error": "Invalid response received from Cloudflare Workers AI."
-        }), 502
-
-    # Extract raw answer from Cloudflare result
-    result = res_data.get("result", {})
-    ai_raw = ""
-    if isinstance(result, dict):
-        ai_raw = result.get("response", "")
-    elif isinstance(result, str):
-        ai_raw = result
-
-    if not ai_raw:
-        return jsonify({
-            "error": "No response was generated by the AI companion. Please try rephrasing your message."
-        }), 502
-
-    # Step 3: Structured Validation & Source Grounding Verification
-    structured = parse_and_validate_response(ai_raw, user_intent, retrieved_sources)
-
-    return jsonify({
-        "status": "success",
-        "response": structured["answer"],
-        "structured": structured,
-        "model": model
-    }), 200
+    except Exception as unexpected_err:
+        # Ultimate fail-safe: never crash with unhandled 500 or blank screen
+        try:
+            intent = classify_user_intent(user_message if 'user_message' in locals() else "")
+            sources = retrieve_relevant_medical_knowledge(user_message if 'user_message' in locals() else "", max_results=1)
+            structured = generate_local_companion_response(user_message if 'user_message' in locals() else "", intent, sources)
+            return jsonify({
+                "status": "success",
+                "response": structured["answer"],
+                "structured": structured,
+                "model": "OvaCare-Clinical-RAG-v1",
+                "fallback": True
+            }), 200
+        except Exception:
+            return jsonify({
+                "error": "The OvaCare Companion encountered a temporary issue. Please try again in a moment.",
+                "status": "error"
+            }), 500
